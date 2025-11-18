@@ -126,17 +126,16 @@ ${resumeText}
 `;
 
     // -------------------------------
-    // OpenAI Responses API (GPT-5.1-mini)
+    // OpenAI Chat Completions API (GPT-5.1-mini)
     // -------------------------------
-    const aiResult = await openai.responses.create({
+    const aiResult = await openai.chat.completions.create({
       model: MODEL,
-      input: prompt,
+      messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     });
 
-    // Extract output text from Responses API
-    const outputText =
-      aiResult.output_text || aiResult.output?.[0]?.content?.[0]?.text;
+    // Extract output text from Chat Completions API
+    const outputText = aiResult.choices[0]?.message?.content;
 
     if (!outputText) {
       console.error("AI ERROR: Empty output from model", aiResult);
