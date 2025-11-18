@@ -9,7 +9,7 @@ import { useReactToPrint } from 'react-to-print';
 
 interface ExportButtonsProps {
   resume: Resume;
-  previewRef: React.RefObject<HTMLDivElement>;
+  previewRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export default function ExportButtons({ resume, previewRef }: ExportButtonsProps) {

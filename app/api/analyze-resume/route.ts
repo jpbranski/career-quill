@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 // Use the model from env or default to gpt-4o-mini
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
@@ -18,6 +13,11 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
     // Parse request body
     const { resumeText } = await request.json();
