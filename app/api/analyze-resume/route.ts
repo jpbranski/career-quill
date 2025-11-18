@@ -197,7 +197,7 @@ ${resumeText}
       {
         ok: true,
         summaryCritique: parsed.summaryCritique,
-        improvements: parsed.improvements,
+        bulletSuggestions: parsed.improvements, 
         rewrittenSummary: parsed.rewrittenSummary,
       },
       { status: 200 }
