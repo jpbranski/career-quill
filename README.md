@@ -23,9 +23,10 @@
 - 🔍 **Instant Analysis**: Upload PDF/DOCX or paste text for immediate feedback
 - 📊 **Comprehensive Metrics**: Word count, reading time, bullet analysis, and more
 - 💡 **Smart Suggestions**: Get actionable recommendations for improvement
-- 🤖 **AI-Powered Review**: Optional OpenAI integration for detailed critique
+- 🤖 **AI-Powered Review**: GPT-5-mini integration for detailed, structured critique
 - 🎯 **ATS Optimization**: Keyword density and formatting checks
-- ⏱️ **Rate Limiting**: Client-side rate limiting (5 requests/day, 30s cooldown)
+- 🛡️ **reCAPTCHA v3**: Spam protection for file uploads and AI features
+- ⏱️ **Rate Limiting**: Client + server rate limiting (5 requests/day, 30s cooldown)
 
 ### Technical Highlights
 - ✅ **No Database Required**: All data stored locally
@@ -63,13 +64,28 @@
    cp .env.example .env
    ```
 
-   Edit `.env` and add your OpenAI API key:
+   Edit `.env` and add your API keys:
    ```env
-   OPENAI_API_KEY=sk-your-openai-api-key-here
-   OPENAI_MODEL=gpt-4o-mini
+   # OpenAI Configuration
+   OPENAI_API_KEY="sk-your-openai-api-key-here"
+   AI_MODEL="gpt-5-mini"
+
+   # reCAPTCHA v3 Configuration
+   RECAPTCHA_SECRET_KEY="your-recaptcha-secret-key"
+   NEXT_PUBLIC_RECAPTCHA_SITE_KEY="your-recaptcha-site-key"
+
+   # Rate Limiting
+   RATE_LIMIT_MAX_PER_DAY="5"
+   RATE_LIMIT_COOLDOWN_SECONDS="30"
    ```
 
-   > **Note**: The AI review feature is optional. The app works without an API key, but AI analysis will be unavailable.
+   **Getting API Keys:**
+   - **OpenAI**: Get your key from [OpenAI Platform](https://platform.openai.com/api-keys)
+   - **reCAPTCHA**: Get your keys from [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin)
+     - Create a new site with reCAPTCHA v3
+     - Add your domain(s) (e.g., localhost, yourapp.vercel.app)
+
+   > **Note**: The AI review feature requires both OpenAI API key and reCAPTCHA configuration. The app works without these, but AI analysis and file upload features will require verification.
 
 4. **Run the development server**
    ```bash
@@ -181,8 +197,13 @@ Career Quill includes 6 professionally designed resume templates:
 
 3. **Add Environment Variables**
    - In Vercel project settings, go to "Environment Variables"
-   - Add `OPENAI_API_KEY` with your OpenAI API key
-   - Optionally add `OPENAI_MODEL` (defaults to gpt-4o-mini)
+   - Add the following required variables:
+     - `OPENAI_API_KEY`: Your OpenAI API key
+     - `AI_MODEL`: `gpt-5-mini` (or your preferred model)
+     - `RECAPTCHA_SECRET_KEY`: Your reCAPTCHA secret key
+     - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`: Your reCAPTCHA site key
+     - `RATE_LIMIT_MAX_PER_DAY`: `5` (or your preferred limit)
+     - `RATE_LIMIT_COOLDOWN_SECONDS`: `30` (or your preferred cooldown)
 
 4. **Deploy**
    - Click "Deploy"
@@ -202,10 +223,14 @@ npm start
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENAI_API_KEY` | Optional | - | OpenAI API key for AI resume review |
-| `OPENAI_MODEL` | Optional | `gpt-4o-mini` | OpenAI model to use |
+| `OPENAI_API_KEY` | Yes (for AI) | - | OpenAI API key for AI resume review (never exposed to client) |
+| `AI_MODEL` | No | `gpt-5-mini` | OpenAI model to use for resume critique |
+| `RECAPTCHA_SECRET_KEY` | Yes (for AI) | - | reCAPTCHA v3 secret key (never exposed to client) |
+| `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | Yes (for AI) | - | reCAPTCHA v3 site key (public, safe to expose) |
+| `RATE_LIMIT_MAX_PER_DAY` | No | `5` | Maximum AI requests per user per day |
+| `RATE_LIMIT_COOLDOWN_SECONDS` | No | `30` | Cooldown period between AI requests |
 
-> **Note**: Without `OPENAI_API_KEY`, the app works fully except for the "Run AI Review" feature.
+> **Note**: The AI review and file upload features require both OpenAI and reCAPTCHA configuration. The rest of the app works without these keys.
 
 ## 📊 Data Storage
 
@@ -224,13 +249,23 @@ Career Quill is built with accessibility in mind:
 - ✅ Screen reader friendly
 - ✅ Sufficient color contrast
 
-## 🎯 Rate Limiting
+## 🎯 Rate Limiting & Security
 
-AI review requests are rate-limited on the client side:
-- **Daily Limit**: 5 requests per day
-- **Cooldown**: 30 seconds between requests
-- **Storage**: Managed via localStorage
-- **Reset**: Automatically resets at midnight
+AI review requests are protected with multiple layers:
+- **Client-Side Rate Limiting**:
+  - Daily Limit: 5 requests per day
+  - Cooldown: 30 seconds between requests
+  - Storage: Managed via localStorage
+  - Reset: Automatically resets at midnight
+- **Server-Side Rate Limiting**:
+  - IP-based tracking with in-memory store
+  - Configurable limits via environment variables
+  - Protects against abuse even if client-side is bypassed
+- **reCAPTCHA v3 Protection**:
+  - Single verification gates both file upload and AI critique
+  - Score-based validation (threshold: 0.5)
+  - Verification state persists in localStorage
+  - No repeated captcha challenges for legitimate users
 
 ## 🧪 Development
 

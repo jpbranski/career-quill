@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import rateLimiter from '@/lib/rateLimiter';
+import { getClientIp } from '@/lib/getClientIp';
 
-// Use the model from env or default to gpt-4o-mini
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+// Use the AI_MODEL from env or default to gpt-5-mini
+const MODEL = process.env.AI_MODEL || 'gpt-5-mini';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,6 +13,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'OpenAI API key not configured' },
         { status: 500 }
+      );
+    }
+
+    // Apply server-side rate limiting
+    const clientIp = getClientIp(request);
+    const rateLimitCheck = rateLimiter.check(clientIp);
+
+    if (!rateLimitCheck.allowed) {
+      return NextResponse.json(
+        { error: rateLimitCheck.error || 'Rate limit exceeded' },
+        {
+          status: 429,
+          headers: rateLimitCheck.retryAfter
+            ? { 'Retry-After': rateLimitCheck.retryAfter.toString() }
+            : {}
+        }
       );
     }
 
@@ -29,22 +47,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prepare the prompt for AI analysis
-    const prompt = `You are an expert resume reviewer and career coach. Analyze the following resume and provide constructive feedback.
+    // Prepare the prompt for structured AI analysis
+    const prompt = `You are an expert resume reviewer and career coach with deep knowledge of ATS optimization, industry best practices, and compelling professional narratives. Analyze the following resume and provide actionable, specific feedback.
 
 Resume Text:
 ${resumeText}
 
 Please provide:
-1. A brief summary (2-3 sentences) of the resume's strengths and areas for improvement
-2. 3-5 specific suggestions for improving bullet points (focus on action verbs, quantifiable metrics, and impact)
-3. An improved version of the professional summary (if one exists in the resume)
+1. A detailed critique (2-3 paragraphs) covering:
+   - Overall strengths and unique selling points
+   - Key weaknesses and areas for improvement
+   - ATS compatibility and keyword optimization
+   - Structure, formatting, and readability
 
-Format your response as JSON with the following structure:
+2. Specific improvement suggestions (8-12 actionable bullet points) focusing on:
+   - Strengthening bullet points with action verbs and quantifiable metrics
+   - Highlighting impact and achievements over responsibilities
+   - Improving keyword density for ATS
+   - Enhancing clarity and professional tone
+   - Tailoring content to target roles
+
+3. An improved version of the professional summary (if one exists) that:
+   - Captures the candidate's unique value proposition
+   - Uses strong, industry-relevant keywords
+   - Demonstrates measurable achievements
+   - Maintains concise, compelling language
+
+Format your response as JSON with this exact structure:
 {
-  "summary": "Your overall assessment...",
-  "bulletSuggestions": ["Suggestion 1", "Suggestion 2", ...],
-  "improvedSummary": "Your improved summary..." (or null if no summary exists in the resume)
+  "summary": "Your detailed 2-3 paragraph critique...",
+  "bulletSuggestions": ["Specific suggestion 1", "Specific suggestion 2", ...] (8-12 items),
+  "improvedSummary": "Your rewritten professional summary..." (or null if no summary exists in the resume)
 }`;
 
     // Call OpenAI API
@@ -53,7 +86,7 @@ Format your response as JSON with the following structure:
       messages: [
         {
           role: 'system',
-          content: 'You are a professional resume reviewer with expertise in ATS optimization and career coaching. Always respond with valid JSON.',
+          content: 'You are a professional resume reviewer with expertise in ATS optimization, career coaching, and professional branding. Always respond with valid JSON that provides specific, actionable feedback.',
         },
         {
           role: 'user',
@@ -61,7 +94,7 @@ Format your response as JSON with the following structure:
         },
       ],
       temperature: 0.7,
-      max_tokens: 1000,
+      max_tokens: 1500,
       response_format: { type: 'json_object' },
     });
 
