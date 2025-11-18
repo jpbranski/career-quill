@@ -5,7 +5,7 @@ export default function Footer() {
         <div className="text-center text-gray-600 dark:text-gray-400">
           <p>© {new Date().getFullYear()} Career Quill. All rights reserved.</p>
           <p className="text-sm mt-2">
-            Powered by GPT-4o-mini • Secured by reCAPTCHA v3
+            Powered by GPT-5-mini • Secured by reCAPTCHA v3
           </p>
         </div>
       </div>

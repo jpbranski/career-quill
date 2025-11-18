@@ -1,10 +1,10 @@
 # Career Quill
 
-**AI-Powered Resume Analyzer** - Get expert feedback on your resume using GPT-4o-mini with secure rate limiting and reCAPTCHA verification.
+**AI-Powered Resume Analyzer** - Get expert feedback on your resume using GPT-5-mini with secure rate limiting and reCAPTCHA verification.
 
 ## Features
 
-- 🤖 **GPT-4o-mini Integration** - Advanced AI analysis for resume critique and improvement
+- 🤖 **GPT-5-mini Integration** - Advanced AI analysis for resume critique and improvement
 - 🔒 **Secure API Key Handling** - Server-side only, never exposed to the client
 - 🛡️ **reCAPTCHA v3 Verification** - Protects against bots and abuse
 - ⏱️ **Dual Rate Limiting** - Both client-side and server-side enforcement
@@ -17,7 +17,7 @@
 - **Framework**: Next.js 15 (App Router)
 - **Runtime**: React 19
 - **Styling**: Tailwind CSS
-- **AI**: OpenAI GPT-4o-mini
+- **AI**: OpenAI GPT-5-mini
 - **Security**: Google reCAPTCHA v3
 - **Language**: TypeScript
 - **File Processing**: mammoth (DOCX), pdf-parse (PDF)
@@ -57,7 +57,7 @@ Create a `.env.local` file in the root directory with the following variables:
 ```bash
 # OpenAI Configuration
 OPENAI_API_KEY="sk-proj-..."              # Your OpenAI API key (REQUIRED)
-AI_MODEL="gpt-4o-mini"                     # Model to use (default: gpt-4o-mini)
+AI_MODEL="gpt-5-mini"                     # Model to use (default: gpt-5-mini)
 
 # Google reCAPTCHA v3 Configuration
 RECAPTCHA_SECRET_KEY="6Lf..."              # Your reCAPTCHA secret key (REQUIRED)
@@ -147,7 +147,7 @@ career-quill/
 1. **Validate input** - Checks resume text and reCAPTCHA token presence
 2. **Verify reCAPTCHA** - Validates token with Google (score ≥ 0.5 required)
 3. **Rate limit enforcement** - IP-based cooldown and daily limit check
-4. **OpenAI request** - Sends structured prompt to GPT-4o-mini
+4. **OpenAI request** - Sends structured prompt to GPT-5-mini
 5. **Parse response** - Extracts critique, suggestions, and rewritten summary
 6. **Return JSON** - Sends analysis back to client
 
@@ -173,7 +173,7 @@ Career Quill implements **dual rate limiting** for security and fair usage:
 
 ### POST `/api/analyze-resume`
 
-Analyzes resume text using GPT-4o-mini.
+Analyzes resume text using GPT-5-mini.
 
 **Request Body:**
 ```json

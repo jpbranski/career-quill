@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Call OpenAI with GPT model from env
-    const model = process.env.AI_MODEL || 'gpt-4o-mini';
+    const model = process.env.AI_MODEL || 'gpt-5-mini';
 
     const prompt = `You are an expert resume editor. Analyze the following resume text and produce three things:
 
