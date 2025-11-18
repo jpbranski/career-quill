@@ -1,188 +1,133 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
+import {
+  Box,
+  Container,
+  Typography,
+  Button,
+  TextField,
+  Paper,
+  Grid,
+  Alert,
+  CircularProgress,
+  Tabs,
+  Tab,
+  Divider,
+} from '@mui/material';
+import { Analytics as AnalyticsIcon, AutoAwesome as AIIcon } from '@mui/icons-material';
+import FileUpload from '@/components/analyzer/FileUpload';
+import AnalysisResults from '@/components/analyzer/AnalysisResults';
+import SuggestionsSidebar from '@/components/analyzer/SuggestionsSidebar';
+import { analyzeResume, AnalysisResult } from '@/lib/analyzer';
+import { canMakeRequest, recordRequest, getRemainingRequests, getTimeUntilNextRequest } from '@/lib/rateLimit';
+import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
-import pdfParse from 'pdf-parse';
 
-interface AnalysisResult {
-  summary: string;
-  suggestions: string[];
-  rewrittenSummary: string;
+// Configure PDF.js worker
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 }
 
-// Rate limit constants
-const STORAGE_KEY_LAST_RUN = 'careerquill_ai_last_run';
-const STORAGE_KEY_DAILY_COUNT = 'careerquill_ai_daily_count';
-const STORAGE_KEY_COUNT_DATE = 'careerquill_ai_count_date';
+interface AIFeedback {
+  summary: string;
+  bulletSuggestions: string[];
+  improvedSummary?: string;
+}
 
 export default function AnalyzerPage() {
+  const [tabValue, setTabValue] = useState(0);
   const [resumeText, setResumeText] = useState('');
-  const [fileName, setFileName] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [recaptchaReady, setRecaptchaReady] = useState(false);
+  const [aiFeedback, setAIFeedback] = useState<AIFeedback | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [aiLoading, setAILoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
 
-  // Rate limiting state
-  const [cooldownRemaining, setCooldownRemaining] = useState(0);
-  const [dailyCount, setDailyCount] = useState(0);
-  const [maxPerDay] = useState(
-    parseInt(process.env.NEXT_PUBLIC_RATE_LIMIT_MAX_PER_DAY || '5')
-  );
-  const [cooldownSeconds] = useState(
-    parseInt(process.env.NEXT_PUBLIC_RATE_LIMIT_COOLDOWN_SECONDS || '30')
-  );
+  const extractTextFromPDF = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
 
-  // Check if reCAPTCHA is loaded
-  useEffect(() => {
-    const checkRecaptcha = () => {
-      if (typeof window !== 'undefined' && (window as any).grecaptcha) {
-        (window as any).grecaptcha.ready(() => {
-          setRecaptchaReady(true);
-        });
-      } else {
-        // Retry after a short delay
-        setTimeout(checkRecaptcha, 100);
-      }
-    };
-    checkRecaptcha();
-  }, []);
-
-  // Load rate limit data from localStorage
-  const loadRateLimitData = useCallback(() => {
-    if (typeof window === 'undefined') return;
-
-    const today = new Date().toDateString();
-    const storedDate = localStorage.getItem(STORAGE_KEY_COUNT_DATE);
-
-    // Reset count if it's a new day
-    if (storedDate !== today) {
-      localStorage.setItem(STORAGE_KEY_COUNT_DATE, today);
-      localStorage.setItem(STORAGE_KEY_DAILY_COUNT, '0');
-      setDailyCount(0);
-    } else {
-      const count = parseInt(localStorage.getItem(STORAGE_KEY_DAILY_COUNT) || '0');
-      setDailyCount(count);
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map((item: any) => item.str).join(' ');
+      fullText += pageText + '\n';
     }
 
-    // Check cooldown
-    const lastRun = parseInt(localStorage.getItem(STORAGE_KEY_LAST_RUN) || '0');
-    const now = Date.now();
-    const timeSinceLastRun = Math.floor((now - lastRun) / 1000);
+    return fullText;
+  };
 
-    if (timeSinceLastRun < cooldownSeconds) {
-      setCooldownRemaining(cooldownSeconds - timeSinceLastRun);
-    }
-  }, [cooldownSeconds]);
+  const extractTextFromDocx = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return result.value;
+  };
 
-  useEffect(() => {
-    loadRateLimitData();
-  }, [loadRateLimitData]);
-
-  // Countdown timer for cooldown
-  useEffect(() => {
-    if (cooldownRemaining > 0) {
-      const timer = setInterval(() => {
-        setCooldownRemaining((prev) => {
-          if (prev <= 1) {
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-
-      return () => clearInterval(timer);
-    }
-  }, [cooldownRemaining]);
-
-  // Handle file upload
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setError('');
+  const handleFileSelect = async (file: File) => {
+    setLoading(true);
+    setError(null);
     setFileName(file.name);
 
     try {
+      let text = '';
+
       if (file.type === 'application/pdf') {
-        const arrayBuffer = await file.arrayBuffer();
-        const data = await pdfParse(Buffer.from(arrayBuffer));
-        setResumeText(data.text);
-      } else if (
-        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      ) {
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.extractRawText({ arrayBuffer });
-        setResumeText(result.value);
-      } else if (file.type === 'text/plain') {
-        const text = await file.text();
-        setResumeText(text);
+        text = await extractTextFromPDF(file);
+      } else if (file.name.endsWith('.docx')) {
+        text = await extractTextFromDocx(file);
       } else {
-        setError('Unsupported file type. Please upload PDF, DOCX, or TXT file.');
+        throw new Error('Unsupported file format');
       }
+
+      setResumeText(text);
+      const analysisResult = analyzeResume(text);
+      setAnalysis(analysisResult);
     } catch (err) {
-      setError('Failed to read file. Please try again.');
-      console.error('File read error:', err);
+      console.error('Error processing file:', err);
+      setError('Failed to process file. Please try again or paste your resume text manually.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Execute reCAPTCHA and get token
-  const getRecaptchaToken = async (): Promise<string | null> => {
+  const handleTextAnalyze = () => {
+    if (!resumeText.trim()) {
+      setError('Please enter or upload your resume text');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
     try {
-      const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
-      if (!siteKey) {
-        setError('reCAPTCHA is not configured');
-        return null;
-      }
-
-      const token = await (window as any).grecaptcha.execute(siteKey, {
-        action: 'resume_ai_critique',
-      });
-
-      return token;
+      const analysisResult = analyzeResume(resumeText);
+      setAnalysis(analysisResult);
     } catch (err) {
-      setError('reCAPTCHA verification failed. Please refresh the page.');
-      console.error('reCAPTCHA error:', err);
-      return null;
+      console.error('Error analyzing text:', err);
+      setError('Failed to analyze resume. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Handle AI analysis
-  const handleAnalyze = async () => {
-    setError('');
-    setAnalysis(null);
+  const handleAIReview = async () => {
+    const rateLimitCheck = canMakeRequest();
 
-    // Validate resume text
-    const cleanedText = resumeText.trim();
-    if (!cleanedText) {
-      setError('Please enter or upload your resume text.');
+    if (!rateLimitCheck.allowed) {
+      setError(rateLimitCheck.reason || 'Rate limit exceeded');
       return;
     }
 
-    if (cleanedText.length < 50) {
-      setError('Resume text is too short. Please provide at least 50 characters.');
+    if (!resumeText.trim()) {
+      setError('Please enter or upload your resume text first');
       return;
     }
 
-    // Check client-side rate limits
-    if (dailyCount >= maxPerDay) {
-      setError(`Daily limit of ${maxPerDay} analyses reached. Please try again tomorrow.`);
-      return;
-    }
-
-    if (cooldownRemaining > 0) {
-      setError(`Please wait ${cooldownRemaining} seconds before analyzing again.`);
-      return;
-    }
-
-    // Get reCAPTCHA token
-    setIsLoading(true);
-    const recaptchaToken = await getRecaptchaToken();
-
-    if (!recaptchaToken) {
-      setIsLoading(false);
-      return;
-    }
+    setAILoading(true);
+    setError(null);
 
     try {
       const response = await fetch('/api/analyze-resume', {
@@ -190,220 +135,205 @@ export default function AnalyzerPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          resumeText: cleanedText,
-          recaptchaToken,
-        }),
+        body: JSON.stringify({ resumeText }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        if (response.status === 429) {
-          setError(data.error || 'Rate limit exceeded. Please try again later.');
-        } else if (response.status === 403) {
-          setError('Verification failed. Please try again.');
-        } else {
-          setError(data.error || 'Analysis failed. Please try again.');
-        }
-        return;
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get AI feedback');
       }
 
-      // Update rate limit data
-      const now = Date.now();
-      localStorage.setItem(STORAGE_KEY_LAST_RUN, now.toString());
-
-      const newCount = dailyCount + 1;
-      localStorage.setItem(STORAGE_KEY_DAILY_COUNT, newCount.toString());
-      setDailyCount(newCount);
-      setCooldownRemaining(cooldownSeconds);
-
-      // Set analysis result
-      setAnalysis(data.analysis);
-
-    } catch (err) {
-      setError('Network error. Please check your connection and try again.');
-      console.error('Analysis error:', err);
+      const data = await response.json();
+      setAIFeedback(data);
+      recordRequest();
+    } catch (err: any) {
+      console.error('Error getting AI feedback:', err);
+      setError(err.message || 'Failed to get AI feedback. Please try again later.');
     } finally {
-      setIsLoading(false);
+      setAILoading(false);
     }
   };
 
-  const canAnalyze =
-    recaptchaReady &&
-    !isLoading &&
-    cooldownRemaining === 0 &&
-    dailyCount < maxPerDay &&
-    resumeText.trim().length >= 50;
+  const remainingRequests = getRemainingRequests();
+  const timeUntilNext = getTimeUntilNextRequest();
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-6xl">
-      <h1 className="text-4xl font-bold mb-2 text-center">Resume Analyzer</h1>
-      <p className="text-gray-600 dark:text-gray-400 text-center mb-8">
-        Get AI-powered feedback to improve your resume
-      </p>
+    <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 4 }}>
+      <Container maxWidth="xl">
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h4" gutterBottom fontWeight={700}>
+            Resume Analyzer
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            Get instant feedback on your resume with AI-powered insights
+          </Typography>
+        </Box>
 
-      <div className="grid lg:grid-cols-2 gap-8">
-        {/* Left Column - Input */}
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-            <h2 className="text-2xl font-semibold mb-4">Upload or Paste Resume</h2>
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
 
-            {/* File Upload */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
-                Upload File (PDF, DOCX, or TXT)
-              </label>
-              <input
-                type="file"
-                accept=".pdf,.docx,.txt"
-                onChange={handleFileUpload}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 cursor-pointer"
-              />
-              {fileName && (
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                  Loaded: {fileName}
-                </p>
-              )}
-            </div>
+        <Grid container spacing={3}>
+          {/* Input Panel */}
+          <Grid item xs={12} lg={5}>
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
+                <Tab label="Upload File" />
+                <Tab label="Paste Text" />
+              </Tabs>
 
-            {/* Text Area */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Or Paste Resume Text
-              </label>
-              <textarea
-                value={resumeText}
-                onChange={(e) => setResumeText(e.target.value)}
-                placeholder="Paste your resume text here..."
-                rows={15}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                {resumeText.trim().length} characters
-              </p>
-            </div>
-
-            {/* Rate Limit Info */}
-            <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
-              <p className="text-sm text-gray-700 dark:text-gray-300">
-                <strong>Usage:</strong> {dailyCount} of {maxPerDay} analyses used today
-              </p>
-              {cooldownRemaining > 0 && (
-                <p className="text-sm text-orange-600 dark:text-orange-400 mt-1">
-                  Cooldown: {cooldownRemaining} seconds remaining
-                </p>
-              )}
-            </div>
-
-            {/* Error Display */}
-            {error && (
-              <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 rounded-lg">
-                <p className="text-red-700 dark:text-red-400">{error}</p>
-              </div>
-            )}
-
-            {/* Analyze Button */}
-            <button
-              onClick={handleAnalyze}
-              disabled={!canAnalyze}
-              className={`w-full mt-6 py-3 px-6 rounded-lg font-semibold transition-colors ${
-                canAnalyze
-                  ? 'bg-primary-600 hover:bg-primary-700 text-white cursor-pointer'
-                  : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              {isLoading ? (
-                <span className="flex items-center justify-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Analyzing...
-                </span>
-              ) : cooldownRemaining > 0 ? (
-                `Wait ${cooldownRemaining}s`
-              ) : dailyCount >= maxPerDay ? (
-                'Daily Limit Reached'
-              ) : !recaptchaReady ? (
-                'Loading reCAPTCHA...'
+              {tabValue === 0 ? (
+                <Box>
+                  <FileUpload
+                    onFileSelect={handleFileSelect}
+                    onTextPaste={setResumeText}
+                  />
+                  {fileName && (
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                      Loaded: {fileName}
+                    </Alert>
+                  )}
+                </Box>
               ) : (
-                'Analyze with AI'
+                <Box>
+                  <TextField
+                    fullWidth
+                    multiline
+                    rows={12}
+                    label="Paste your resume text here"
+                    value={resumeText}
+                    onChange={(e) => setResumeText(e.target.value)}
+                    placeholder="Paste the text content of your resume here..."
+                  />
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    sx={{ mt: 2 }}
+                    onClick={handleTextAnalyze}
+                    disabled={loading || !resumeText.trim()}
+                    startIcon={loading ? <CircularProgress size={20} /> : <AnalyticsIcon />}
+                  >
+                    {loading ? 'Analyzing...' : 'Analyze Resume'}
+                  </Button>
+                </Box>
               )}
-            </button>
+            </Paper>
 
-            {!recaptchaReady && (
-              <p className="text-xs text-gray-500 text-center mt-2">
-                Waiting for reCAPTCHA to load...
-              </p>
+            {/* AI Review Section */}
+            {analysis && (
+              <Paper sx={{ p: 3 }}>
+                <Typography variant="h6" gutterBottom>
+                  AI-Powered Review
+                </Typography>
+                <Typography variant="body2" color="text.secondary" paragraph>
+                  Get detailed AI feedback on your resume content and structure.
+                </Typography>
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {remainingRequests} requests remaining today
+                  </Typography>
+                  {timeUntilNext > 0 && (
+                    <Typography variant="caption" color="text.secondary">
+                      Next available in {timeUntilNext}s
+                    </Typography>
+                  )}
+                </Box>
+
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={handleAIReview}
+                  disabled={aiLoading || timeUntilNext > 0}
+                  startIcon={aiLoading ? <CircularProgress size={20} /> : <AIIcon />}
+                  sx={{
+                    background: 'linear-gradient(135deg, #5A64B3 0%, #8B92D9 100%)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #3F4682 0%, #5A64B3 100%)',
+                    },
+                  }}
+                >
+                  {aiLoading ? 'Analyzing with AI...' : 'Run AI Review'}
+                </Button>
+
+                {aiFeedback && (
+                  <Box sx={{ mt: 3 }}>
+                    <Alert severity="info" icon={<AIIcon />}>
+                      <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                        AI Feedback
+                      </Typography>
+                      <Typography variant="body2" paragraph>
+                        {aiFeedback.summary}
+                      </Typography>
+
+                      {aiFeedback.bulletSuggestions.length > 0 && (
+                        <>
+                          <Typography variant="body2" fontWeight={600} gutterBottom>
+                            Bullet Point Suggestions:
+                          </Typography>
+                          <Box component="ul" sx={{ pl: 2, mt: 1 }}>
+                            {aiFeedback.bulletSuggestions.map((suggestion, idx) => (
+                              <Typography component="li" key={idx} variant="body2">
+                                {suggestion}
+                              </Typography>
+                            ))}
+                          </Box>
+                        </>
+                      )}
+
+                      {aiFeedback.improvedSummary && (
+                        <>
+                          <Divider sx={{ my: 1.5 }} />
+                          <Typography variant="body2" fontWeight={600} gutterBottom>
+                            Improved Summary:
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
+                            {aiFeedback.improvedSummary}
+                          </Typography>
+                        </>
+                      )}
+                    </Alert>
+                  </Box>
+                )}
+              </Paper>
             )}
-          </div>
-        </div>
+          </Grid>
 
-        {/* Right Column - Results */}
-        <div className="space-y-6">
-          {analysis ? (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-              <h2 className="text-2xl font-semibold mb-4 text-green-600 dark:text-green-400">
-                Analysis Results
-              </h2>
+          {/* Results Panel */}
+          <Grid item xs={12} lg={7}>
+            {!analysis && !loading && (
+              <Paper sx={{ p: 8, textAlign: 'center' }}>
+                <AnalyticsIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                <Typography variant="h6" color="text.secondary">
+                  Upload or paste your resume to get started
+                </Typography>
+              </Paper>
+            )}
 
-              {/* Critique Summary */}
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold mb-2">Critique</h3>
-                <div className="prose dark:prose-invert max-w-none">
-                  <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
-                    {analysis.summary}
-                  </p>
-                </div>
-              </div>
+            {loading && (
+              <Paper sx={{ p: 8, textAlign: 'center' }}>
+                <CircularProgress size={60} />
+                <Typography variant="h6" color="text.secondary" sx={{ mt: 2 }}>
+                  Analyzing your resume...
+                </Typography>
+              </Paper>
+            )}
 
-              {/* Suggestions */}
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold mb-2">Suggestions for Improvement</h3>
-                <ul className="space-y-2">
-                  {analysis.suggestions.map((suggestion, index) => (
-                    <li
-                      key={index}
-                      className="flex items-start text-gray-700 dark:text-gray-300"
-                    >
-                      <span className="text-primary-600 mr-2 mt-1">•</span>
-                      <span>{suggestion}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Rewritten Summary */}
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Rewritten Professional Summary</h3>
-                <div className="p-4 bg-primary-50 dark:bg-primary-900/20 rounded-lg border border-primary-200 dark:border-primary-800">
-                  <p className="text-gray-700 dark:text-gray-300">
-                    {analysis.rewrittenSummary}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-              <h2 className="text-2xl font-semibold mb-4">Analysis Results</h2>
-              <p className="text-gray-500 dark:text-gray-400 text-center py-12">
-                Your analysis results will appear here after you click "Analyze with AI"
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Footer Note */}
-      <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
-        <p>
-          This service is protected by reCAPTCHA and rate limiting to ensure fair usage.
-        </p>
-        <p className="mt-1">
-          All resume data is processed securely and not stored permanently.
-        </p>
-      </div>
-    </div>
+            {analysis && !loading && (
+              <Grid container spacing={3}>
+                <Grid item xs={12} lg={7}>
+                  <AnalysisResults analysis={analysis} />
+                </Grid>
+                <Grid item xs={12} lg={5}>
+                  <SuggestionsSidebar suggestions={analysis.suggestions} />
+                </Grid>
+              </Grid>
+            )}
+          </Grid>
+        </Grid>
+      </Container>
+    </Box>
   );
 }

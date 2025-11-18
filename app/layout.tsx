@@ -1,38 +1,83 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import './globals.css';
+'use client';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import { Box } from '@mui/material';
+import { createCareerQuillTheme } from '@/theme/theme';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-
-const inter = Inter({ subsets: ['latin'] });
-
-export const metadata: Metadata = {
-  title: 'Career Quill - AI-Powered Resume Analyzer',
-  description: 'Get expert AI feedback on your resume to improve clarity, structure, and impact.',
-};
+import './globals.css';
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
+  const [mode, setMode] = useState<'light' | 'dark'>('dark');
+  const [mounted, setMounted] = useState(false);
+
+  // Load theme preference from localStorage
+  useEffect(() => {
+    const savedMode = localStorage.getItem('theme-mode') as 'light' | 'dark' | null;
+    if (savedMode) {
+      setMode(savedMode);
+    }
+    setMounted(true);
+  }, []);
+
+  // Update localStorage and document attribute when theme changes
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem('theme-mode', mode);
+      document.documentElement.setAttribute('data-theme', mode);
+    }
+  }, [mode, mounted]);
+
+  const theme = useMemo(() => createCareerQuillTheme(mode), [mode]);
+
+  const handleThemeToggle = () => {
+    setMode((prevMode) => (prevMode === 'dark' ? 'light' : 'dark'));
+  };
+
+  // Prevent flash of wrong theme
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <html lang="en">
       <head>
-        <script
-          src={`https://www.google.com/recaptcha/api.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
-          async
-          defer
-        />
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="Build and refine a resume you're proud of with Career Quill - a professional resume builder and analyzer" />
+        <meta name="theme-color" content="#C87E42" />
+        <title>Career Quill - Resume Builder & Analyzer</title>
       </head>
-      <body className={inter.className}>
-        <div className="min-h-screen flex flex-col">
-          <Header />
-          <main className="flex-grow">
-            {children}
-          </main>
-          <Footer />
-        </div>
+      <body>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: '100vh',
+            }}
+          >
+            <Header mode={mode} onThemeToggle={handleThemeToggle} />
+            <Box
+              component="main"
+              sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              {children}
+            </Box>
+            <Footer />
+          </Box>
+        </ThemeProvider>
       </body>
     </html>
   );
