@@ -189,8 +189,12 @@ export async function exportAsDocx(resume: Resume): Promise<void> {
       );
       sections.push(
         new Paragraph({
-          text: formatDateRange(exp.startDate, exp.endDate, exp.current),
-          italics: true,
+          children: [
+            new TextRun({
+              text: formatDateRange(exp.startDate, exp.endDate, exp.current),
+              italics: true,
+            }),
+          ],
         })
       );
 
@@ -243,8 +247,12 @@ export async function exportAsDocx(resume: Resume): Promise<void> {
       );
       sections.push(
         new Paragraph({
-          text: formatDateRange(edu.startDate, edu.endDate, false),
-          italics: true,
+          children: [
+            new TextRun({
+              text: formatDateRange(edu.startDate, edu.endDate, false),
+              italics: true,
+            }),
+          ],
         })
       );
       if (edu.gpa) {
@@ -288,8 +296,12 @@ export async function exportAsDocx(resume: Resume): Promise<void> {
       if (proj.description) {
         sections.push(
           new Paragraph({
-            text: proj.description,
-            italics: true,
+            children: [
+              new TextRun({
+                text: proj.description,
+                italics: true,
+              }),
+            ],
           })
         );
       }
