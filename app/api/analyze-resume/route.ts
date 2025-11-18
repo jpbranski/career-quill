@@ -132,18 +132,17 @@ ${resumeText}
       // NO response_format here — gpt-5-mini does not support it
     });
 
-    // Extract model output
-    const outputText =
-      aiResult.output_text ||
-      aiResult.output?.[0]?.content?.[0]?.text;
+    // GPT-5-mini always returns output_text directly
+    const outputText = aiResult.output_text;
 
-    if (!outputText) {
-      console.error("AI ERROR: Empty output", aiResult);
+    if (!outputText || typeof outputText !== "string") {
+      console.error("AI ERROR: Missing or invalid output_text", aiResult);
       return NextResponse.json(
-        { error: "AI returned an empty response" },
+        { error: "AI returned an empty or invalid response." },
         { status: 500 }
       );
     }
+
 
     // --------------------------------------
     // Attempt to parse JSON
