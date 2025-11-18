@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Container,
@@ -14,8 +14,14 @@ import {
   Tabs,
   Tab,
   Divider,
+  Chip,
 } from '@mui/material';
-import { Analytics as AnalyticsIcon, AutoAwesome as AIIcon } from '@mui/icons-material';
+import {
+  Analytics as AnalyticsIcon,
+  AutoAwesome as AIIcon,
+  Shield as ShieldIcon,
+  CheckCircle as CheckIcon,
+} from '@mui/icons-material';
 import FileUpload from '@/components/analyzer/FileUpload';
 import AnalysisResults from '@/components/analyzer/AnalysisResults';
 import SuggestionsSidebar from '@/components/analyzer/SuggestionsSidebar';
@@ -24,9 +30,16 @@ import { canMakeRequest, recordRequest, getRemainingRequests, getTimeUntilNextRe
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 
-// Configure PDF.js worker
+// Configure PDF.js worker with local file
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
+}
+
+// Declare grecaptcha for TypeScript
+declare global {
+  interface Window {
+    grecaptcha: any;
+  }
 }
 
 interface AIFeedback {
@@ -44,6 +57,64 @@ export default function AnalyzerPage() {
   const [aiLoading, setAILoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [captchaVerified, setCaptchaVerified] = useState(false);
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+
+  // Load captcha verification status from localStorage
+  useEffect(() => {
+    const verified = localStorage.getItem('cq_captcha_verified') === 'true';
+    setCaptchaVerified(verified);
+  }, []);
+
+  // Verify captcha with reCAPTCHA v3
+  const verifyCaptcha = async () => {
+    if (!process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
+      setError('reCAPTCHA is not configured. Please check environment variables.');
+      return false;
+    }
+
+    setCaptchaLoading(true);
+    setError(null);
+
+    try {
+      // Check if grecaptcha is loaded
+      if (typeof window.grecaptcha === 'undefined') {
+        throw new Error('reCAPTCHA not loaded. Please refresh the page.');
+      }
+
+      // Execute reCAPTCHA v3
+      const token = await window.grecaptcha.execute(
+        process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY,
+        { action: 'resume_verification' }
+      );
+
+      // Verify token with our API
+      const response = await fetch('/api/verify-captcha', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recaptchaToken: token }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error('Captcha verification failed');
+      }
+
+      // Store verification status
+      localStorage.setItem('cq_captcha_verified', 'true');
+      setCaptchaVerified(true);
+      return true;
+    } catch (err: any) {
+      console.error('Captcha verification error:', err);
+      setError(err.message || 'Captcha verification failed. Please try again.');
+      return false;
+    } finally {
+      setCaptchaLoading(false);
+    }
+  };
 
   const extractTextFromPDF = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -67,6 +138,15 @@ export default function AnalyzerPage() {
   };
 
   const handleFileSelect = async (file: File) => {
+    // Check captcha verification before processing file
+    if (!captchaVerified) {
+      setError('Please verify captcha before uploading files.');
+      const verified = await verifyCaptcha();
+      if (!verified) {
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
     setFileName(file.name);
@@ -114,6 +194,15 @@ export default function AnalyzerPage() {
   };
 
   const handleAIReview = async () => {
+    // Check captcha verification before AI review
+    if (!captchaVerified) {
+      setError('Please verify captcha before running AI review.');
+      const verified = await verifyCaptcha();
+      if (!verified) {
+        return;
+      }
+    }
+
     const rateLimitCheck = canMakeRequest();
 
     if (!rateLimitCheck.allowed) {
@@ -160,14 +249,44 @@ export default function AnalyzerPage() {
   return (
     <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 4 }}>
       <Container maxWidth="xl">
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" gutterBottom fontWeight={700}>
-            Resume Analyzer
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Get instant feedback on your resume with AI-powered insights
-          </Typography>
+        <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box>
+            <Typography variant="h4" gutterBottom fontWeight={700}>
+              Resume Analyzer
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Get instant feedback on your resume with AI-powered insights
+            </Typography>
+          </Box>
+          {captchaVerified && (
+            <Chip
+              icon={<CheckIcon />}
+              label="Verified"
+              color="success"
+              variant="outlined"
+            />
+          )}
         </Box>
+
+        {!captchaVerified && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="body2">
+                Please verify to upload files and use AI features
+              </Typography>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={captchaLoading ? <CircularProgress size={16} /> : <ShieldIcon />}
+                onClick={verifyCaptcha}
+                disabled={captchaLoading}
+                sx={{ ml: 2 }}
+              >
+                {captchaLoading ? 'Verifying...' : 'Verify Now'}
+              </Button>
+            </Box>
+          </Alert>
+        )}
 
         {error && (
           <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>

@@ -53,6 +53,12 @@ export default function RootLayout({
         <meta name="description" content="Build and refine a resume you're proud of with Career Quill - a professional resume builder and analyzer" />
         <meta name="theme-color" content="#C87E42" />
         <title>Career Quill - Resume Builder & Analyzer</title>
+        {/* reCAPTCHA v3 Script */}
+        <script
+          src={`https://www.google.com/recaptcha/api.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}`}
+          async
+          defer
+        />
       </head>
       <body>
         <ThemeProvider theme={theme}>
