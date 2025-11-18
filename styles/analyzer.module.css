@@ -1,0 +1,114 @@
+/* Analyzer Page Styles */
+
+.uploadArea {
+  border: 2px dashed var(--cq-border);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.uploadArea:hover {
+  border-color: var(--cq-accent);
+  background-color: rgba(200, 126, 66, 0.05);
+}
+
+.uploadIcon {
+  font-size: 3rem;
+  color: var(--cq-accent);
+  margin-bottom: 1rem;
+}
+
+.analysisCard {
+  background: var(--cq-surface);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--cq-border);
+}
+
+.scoreCircle {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 0 auto;
+}
+
+.scoreExcellent {
+  background: linear-gradient(135deg, #4CAF50 0%, #81C784 100%);
+  color: white;
+}
+
+.scoreGood {
+  background: linear-gradient(135deg, #FFA726 0%, #FFB74D 100%);
+  color: white;
+}
+
+.scoreNeedsWork {
+  background: linear-gradient(135deg, #FF5A5F 0%, #FF7A7E 100%);
+  color: white;
+}
+
+.suggestionItem {
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  border-radius: 8px;
+  border-left: 4px solid;
+}
+
+.suggestionError {
+  border-left-color: var(--cq-error);
+  background: rgba(255, 90, 95, 0.1);
+}
+
+.suggestionWarning {
+  border-left-color: var(--cq-warning);
+  background: rgba(255, 167, 38, 0.1);
+}
+
+.suggestionInfo {
+  border-left-color: var(--cq-accent-secondary);
+  background: rgba(90, 100, 179, 0.1);
+}
+
+.metricBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--cq-surface-soft);
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.progressBar {
+  height: 8px;
+  background: var(--cq-surface-soft);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.progressSuccess {
+  background: linear-gradient(90deg, #4CAF50 0%, #81C784 100%);
+}
+
+.progressWarning {
+  background: linear-gradient(90deg, #FFA726 0%, #FFB74D 100%);
+}
+
+.progressDanger {
+  background: linear-gradient(90deg, #FF5A5F 0%, #FF7A7E 100%);
+}
