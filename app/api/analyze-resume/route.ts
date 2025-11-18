@@ -1,148 +1,188 @@
-import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
-import rateLimiter from '@/lib/rateLimiter';
-import { getClientIp } from '@/lib/getClientIp';
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
-// Use the AI_MODEL from env or default to gpt-5-mini
-const MODEL = process.env.AI_MODEL || 'gpt-5-mini';
+// -------------------------------
+// ENV + CONSTS
+// -------------------------------
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const MODEL = process.env.AI_MODEL || "gpt-5.1-mini";
 
-export async function POST(request: NextRequest) {
+// Server-side in-memory rate limiter (per IP)
+const rateStore = new Map();
+
+// 5 / day & 30s cooldown defaults
+const MAX_PER_DAY = Number(process.env.RATE_LIMIT_MAX_PER_DAY || 5);
+const COOLDOWN_SECONDS = Number(process.env.RATE_LIMIT_COOLDOWN_SECONDS || 30);
+
+// -------------------------------
+// Helper: Get client IP
+// -------------------------------
+function getClientIp(req: Request) {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (!forwarded) return "unknown";
+  return forwarded.split(",")[0].trim();
+}
+
+// -------------------------------
+// Helper: Server-side rate limit
+// -------------------------------
+function checkServerRateLimit(ip: string) {
+  const now = Date.now();
+  const entry = rateStore.get(ip) || {
+    count: 0,
+    lastTimestamp: 0,
+    dayStart: now,
+  };
+
+  // Reset daily counter if >24h
+  if (now - entry.dayStart > 24 * 60 * 60 * 1000) {
+    entry.count = 0;
+    entry.dayStart = now;
+  }
+
+  // Enforce cooldown
+  const secondsSinceLast = (now - entry.lastTimestamp) / 1000;
+  if (secondsSinceLast < COOLDOWN_SECONDS) {
+    return {
+      ok: false,
+      type: "cooldown",
+      remaining: Math.ceil(COOLDOWN_SECONDS - secondsSinceLast),
+    };
+  }
+
+  // Enforce daily max
+  if (entry.count >= MAX_PER_DAY) {
+    return {
+      ok: false,
+      type: "daily_limit",
+    };
+  }
+
+  return { ok: true, entry };
+}
+
+// -------------------------------
+// POST
+// -------------------------------
+export async function POST(req: Request) {
   try {
-    // Check if API key is configured
-    if (!process.env.OPENAI_API_KEY) {
+    const ip = getClientIp(req);
+
+    // Parse inbound request JSON
+    let body;
+    try {
+      body = await req.json();
+    } catch (err) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      );
-    }
-
-    // Apply server-side rate limiting
-    const clientIp = getClientIp(request);
-    const rateLimitCheck = rateLimiter.check(clientIp);
-
-    if (!rateLimitCheck.allowed) {
-      return NextResponse.json(
-        { error: rateLimitCheck.error || 'Rate limit exceeded' },
-        {
-          status: 429,
-          headers: rateLimitCheck.retryAfter
-            ? { 'Retry-After': rateLimitCheck.retryAfter.toString() }
-            : {}
-        }
-      );
-    }
-
-    // Initialize OpenAI client
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
-    // Parse request body
-    const { resumeText } = await request.json();
-
-    if (!resumeText || typeof resumeText !== 'string') {
-      return NextResponse.json(
-        { error: 'Invalid resume text provided' },
+        { error: "Invalid JSON body." },
         { status: 400 }
       );
     }
 
-    // Prepare the prompt for structured AI analysis
-    const prompt = `You are an expert resume reviewer and career coach with deep knowledge of ATS optimization, industry best practices, and compelling professional narratives. Analyze the following resume and provide actionable, specific feedback.
+    const { resumeText } = body;
 
-Resume Text:
-${resumeText}
-
-Please provide:
-1. A detailed critique (2-3 paragraphs) covering:
-   - Overall strengths and unique selling points
-   - Key weaknesses and areas for improvement
-   - ATS compatibility and keyword optimization
-   - Structure, formatting, and readability
-
-2. Specific improvement suggestions (8-12 actionable bullet points) focusing on:
-   - Strengthening bullet points with action verbs and quantifiable metrics
-   - Highlighting impact and achievements over responsibilities
-   - Improving keyword density for ATS
-   - Enhancing clarity and professional tone
-   - Tailoring content to target roles
-
-3. An improved version of the professional summary (if one exists) that:
-   - Captures the candidate's unique value proposition
-   - Uses strong, industry-relevant keywords
-   - Demonstrates measurable achievements
-   - Maintains concise, compelling language
-
-Format your response as JSON with this exact structure:
-{
-  "summary": "Your detailed 2-3 paragraph critique...",
-  "bulletSuggestions": ["Specific suggestion 1", "Specific suggestion 2", ...] (8-12 items),
-  "improvedSummary": "Your rewritten professional summary..." (or null if no summary exists in the resume)
-}`;
-
-    // Call OpenAI API
-    const completion = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a professional resume reviewer with expertise in ATS optimization, career coaching, and professional branding. Always respond with valid JSON that provides specific, actionable feedback.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 1500,
-      response_format: { type: 'json_object' },
-    });
-
-    // Extract the response
-    const aiResponse = completion.choices[0]?.message?.content;
-
-    if (!aiResponse) {
-      throw new Error('No response from AI');
-    }
-
-    // Parse the JSON response
-    const feedback = JSON.parse(aiResponse);
-
-    // Validate the response structure
-    if (!feedback.summary || !Array.isArray(feedback.bulletSuggestions)) {
-      throw new Error('Invalid AI response format');
-    }
-
-    return NextResponse.json(feedback);
-  } catch (error: any) {
-    console.error('Error in analyze-resume API:', error);
-
-    // Handle specific OpenAI errors
-    if (error.code === 'insufficient_quota') {
+    if (!resumeText || resumeText.trim().length < 30) {
       return NextResponse.json(
-        { error: 'AI service quota exceeded. Please try again later.' },
-        { status: 503 }
+        { error: "Resume text is too short or missing." },
+        { status: 400 }
       );
     }
 
-    if (error.code === 'invalid_api_key') {
+    // Rate limiting check
+    const rl = checkServerRateLimit(ip);
+    if (!rl.ok) {
+      if (rl.type === "cooldown") {
+        return NextResponse.json(
+          {
+            error: "cooldown",
+            remaining: rl.remaining,
+          },
+          { status: 429 }
+        );
+      }
+      if (rl.type === "daily_limit") {
+        return NextResponse.json(
+          { error: "daily_limit" },
+          { status: 429 }
+        );
+      }
+    }
+
+    // -------------------------------
+    // Construct analysis prompt
+    // -------------------------------
+    const prompt = `
+You are an expert resume editor. Analyze the following resume text and produce a JSON object with:
+
+1. "summaryCritique": A concise 2–3 paragraph critique.
+2. "improvements": An array of 8–12 specific improvement suggestions.
+3. "rewrittenSummary": A polished 2–3 sentence professional summary.
+
+Do NOT invent details not present in the text.
+Do NOT comment on visual formatting (you only see plain text).
+
+Resume text:
+${resumeText}
+`;
+
+    // -------------------------------
+    // OpenAI Responses API (GPT-5.1-mini)
+    // -------------------------------
+    const aiResult = await openai.responses.create({
+      model: MODEL,
+      input: prompt,
+      response_format: { type: "json_object" },
+    });
+
+    // Extract output text from Responses API
+    const outputText =
+      aiResult.output_text || aiResult.output?.[0]?.content?.[0]?.text;
+
+    if (!outputText) {
+      console.error("AI ERROR: Empty output from model", aiResult);
       return NextResponse.json(
-        { error: 'AI service configuration error' },
+        { error: "AI returned an empty response." },
         { status: 500 }
       );
     }
 
+    // Parse JSON
+    let parsed;
+    try {
+      parsed = JSON.parse(outputText);
+    } catch (err) {
+      console.error("AI JSON PARSE ERROR:", outputText);
+      return NextResponse.json(
+        { error: "Failed to parse AI output." },
+        { status: 500 }
+      );
+    }
+
+    // -------------------------------
+    // Save rate limit usage
+    // -------------------------------
+    const { entry } = rl;
+    entry.count++;
+    entry.lastTimestamp = Date.now();
+    rateStore.set(ip, entry);
+
+    // -------------------------------
+    // Return response
+    // -------------------------------
     return NextResponse.json(
-      { error: 'Failed to analyze resume. Please try again.' },
+      {
+        ok: true,
+        summaryCritique: parsed.summaryCritique,
+        improvements: parsed.improvements,
+        rewrittenSummary: parsed.rewrittenSummary,
+      },
+      { status: 200 }
+    );
+  } catch (err) {
+    console.error("UNEXPECTED AI ROUTE ERROR:", err);
+    return NextResponse.json(
+      { error: "Failed to analyze resume." },
       { status: 500 }
     );
   }
-}
-
-// Handle unsupported methods
-export async function GET() {
-  return NextResponse.json(
-    { error: 'Method not allowed' },
-    { status: 405 }
-  );
 }
