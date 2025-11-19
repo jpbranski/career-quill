@@ -5,16 +5,17 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "next-sitemap",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@hello-pangea/dnd": "^17.0.0",
-    "@mui/material": "^6.1.9",
-    "@mui/icons-material": "^6.1.9",
     "@emotion/react": "^11.13.5",
     "@emotion/styled": "^11.13.5",
+    "@hello-pangea/dnd": "^17.0.0",
+    "@mui/icons-material": "^6.1.9",
+    "@mui/material": "^6.1.9",
     "docx": "^8.5.0",
     "mammoth": "^1.8.0",
     "next": "^15.1.0",
@@ -28,6 +29,7 @@
     "@types/node": "^22.10.1",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
+    "next-sitemap": "^4.2.3",
     "typescript": "^5.7.2"
   },
   "engines": {

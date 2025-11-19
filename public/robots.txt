@@ -1,3 +1,10 @@
+# *
 User-agent: *
 Allow: /
 Disallow: /api/
+
+# Host
+Host: https://www.thecareerquill.com
+
+# Sitemaps
+Sitemap: https://www.thecareerquill.com/sitemap.xml
