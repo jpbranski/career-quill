@@ -22,6 +22,7 @@ import {
   Shield as ShieldIcon,
   CheckCircle as CheckIcon,
 } from '@mui/icons-material';
+
 import FileUpload from '@/components/analyzer/FileUpload';
 import AnalysisResults from '@/components/analyzer/AnalysisResults';
 import SuggestionsSidebar from '@/components/analyzer/SuggestionsSidebar';
@@ -32,6 +33,7 @@ import {
   getRemainingRequests,
   getTimeUntilNextRequest,
 } from '@/lib/rateLimit';
+
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 
@@ -47,6 +49,28 @@ declare global {
   }
 }
 
+/* ============================================================
+    Utility — Wait for reCAPTCHA Enterprise to fully load
+   ============================================================ */
+async function waitForRecaptcha() {
+  return new Promise<void>((resolve, reject) => {
+    let attempts = 0;
+
+    const check = () => {
+      if (window.grecaptcha?.enterprise?.execute) {
+        resolve();
+      } else if (attempts > 50) {
+        reject(new Error('reCAPTCHA failed to load'));
+      } else {
+        attempts++;
+        setTimeout(check, 100);
+      }
+    };
+
+    check();
+  });
+}
+
 interface AIFeedback {
   summary: string;
   bulletSuggestions: string[];
@@ -58,19 +82,27 @@ export default function AnalyzerPage() {
   const [resumeText, setResumeText] = useState('');
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [aiFeedback, setAIFeedback] = useState<AIFeedback | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAILoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const [fileName, setFileName] = useState<string | null>(null);
+
   const [captchaVerified, setCaptchaVerified] = useState(false);
   const [captchaLoading, setCaptchaLoading] = useState(false);
 
+  /* ------------------------------------------------------------
+      Load captcha verification state
+     ------------------------------------------------------------ */
   useEffect(() => {
     const verified = localStorage.getItem('cq_captcha_verified') === 'true';
     setCaptchaVerified(verified);
   }, []);
 
-  // Enterprise reCAPTCHA verification
+  /* ============================================================
+      reCAPTCHA Enterprise Verification
+     ============================================================ */
   const verifyCaptcha = async () => {
     if (!process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
       setError('reCAPTCHA Enterprise is not configured.');
@@ -81,27 +113,24 @@ export default function AnalyzerPage() {
     setError(null);
 
     try {
-      if (!window.grecaptcha) {
-        throw new Error('reCAPTCHA failed to load. Refresh and try again.');
-      }
+      // Wait for Enterprise API to actually load
+      await waitForRecaptcha();
 
       const token = await window.grecaptcha.enterprise.execute(
-        process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY,
+        process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!,
         { action: 'resume_verification' }
       );
 
-      const response = await fetch('/api/verify-captcha', {
+      const result = await fetch('/api/verify-captcha', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
           action: 'resume_verification',
         }),
-      });
+      }).then((res) => res.json());
 
-      const data = await response.json();
-
-      if (!data.ok) {
+      if (!result.ok) {
         throw new Error('Captcha verification failed');
       }
 
@@ -110,25 +139,26 @@ export default function AnalyzerPage() {
       return true;
     } catch (err: any) {
       console.error('Captcha error:', err);
-      setError(err.message || 'Captcha failed. Try again.');
+      setError(err.message || 'Captcha verification failed.');
       return false;
     } finally {
       setCaptchaLoading(false);
     }
   };
 
-  // PDF + DOCX extractors
+  /* ============================================================
+      PDF + DOCX Extractors
+     ============================================================ */
   const extractTextFromPDF = async (file: File) => {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = '';
 
+    let fullText = '';
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
       fullText += content.items.map((i: any) => i.str).join(' ') + '\n';
     }
-
     return fullText;
   };
 
@@ -138,6 +168,9 @@ export default function AnalyzerPage() {
     return result.value;
   };
 
+  /* ============================================================
+      File Upload Handler
+     ============================================================ */
   const handleFileSelect = async (file: File) => {
     if (!captchaVerified) {
       const verified = await verifyCaptcha();
@@ -150,6 +183,7 @@ export default function AnalyzerPage() {
 
     try {
       let text = '';
+
       if (file.type === 'application/pdf') {
         text = await extractTextFromPDF(file);
       } else if (file.name.endsWith('.docx')) {
@@ -159,24 +193,29 @@ export default function AnalyzerPage() {
       }
 
       setResumeText(text);
-      const analysisResult = await analyzeResume(text);
-      setAnalysis(analysisResult);
-    } catch {
-      setError('Failed to process file. Try again.');
+      const result = await analyzeResume(text);
+      setAnalysis(result);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to process file.');
     } finally {
       setLoading(false);
     }
   };
 
+  /* ============================================================
+      Paste Text Handler
+     ============================================================ */
   const handleTextAnalyze = async () => {
     if (!resumeText.trim()) {
-      setError('Enter or paste resume text first.');
+      setError('Please enter or paste resume text.');
       return;
     }
+
     setLoading(true);
     try {
-      const analysisResult = await analyzeResume(resumeText);
-      setAnalysis(analysisResult);
+      const result = await analyzeResume(resumeText);
+      setAnalysis(result);
     } catch {
       setError('Failed to analyze resume.');
     } finally {
@@ -184,15 +223,18 @@ export default function AnalyzerPage() {
     }
   };
 
+  /* ============================================================
+      AI Review Handler
+     ============================================================ */
   const handleAIReview = async () => {
     if (!captchaVerified) {
       const verified = await verifyCaptcha();
       if (!verified) return;
     }
 
-    const rateLimitCheck = canMakeRequest();
-    if (!rateLimitCheck.allowed) {
-      setError(rateLimitCheck.reason || 'Rate limit exceeded');
+    const rateLimit = canMakeRequest();
+    if (!rateLimit.allowed) {
+      setError(rateLimit.reason || 'Rate limit exceeded.');
       return;
     }
 
@@ -202,7 +244,6 @@ export default function AnalyzerPage() {
     }
 
     setAILoading(true);
-    setError(null);
 
     try {
       const response = await fetch('/api/analyze-resume', {
@@ -211,13 +252,13 @@ export default function AnalyzerPage() {
         body: JSON.stringify({ resumeText }),
       });
 
-      if (!response.ok) throw new Error('AI analysis failed');
+      if (!response.ok) throw new Error('AI analysis failed.');
 
       const data = await response.json();
       setAIFeedback(data);
       recordRequest();
     } catch (err: any) {
-      setError(err.message || 'AI Review failed');
+      setError(err.message || 'AI Review failed.');
     } finally {
       setAILoading(false);
     }
@@ -226,6 +267,9 @@ export default function AnalyzerPage() {
   const remainingRequests = getRemainingRequests();
   const timeUntilNext = getTimeUntilNextRequest();
 
+  /* ============================================================
+      UI Rendering
+     ============================================================ */
   return (
     <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 4 }}>
       <Container maxWidth="xl">
@@ -253,13 +297,11 @@ export default function AnalyzerPage() {
               <Button
                 variant="contained"
                 size="small"
-                startIcon={
-                  captchaLoading ? <CircularProgress size={16} /> : <ShieldIcon />
-                }
+                startIcon={captchaLoading ? <CircularProgress size={16} /> : <ShieldIcon />}
                 onClick={verifyCaptcha}
                 disabled={captchaLoading}
               >
-                {captchaLoading ? 'Verifying...' : 'Verify Now'}
+                {captchaLoading ? 'Verifying…' : 'Verify Now'}
               </Button>
             </Box>
           </Alert>
@@ -272,7 +314,7 @@ export default function AnalyzerPage() {
         )}
 
         <Grid container spacing={3}>
-          {/* Left Column */}
+          {/* LEFT COLUMN */}
           <Grid item xs={12} lg={5}>
             <Paper sx={{ p: 3, mb: 3 }}>
               <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
@@ -300,13 +342,13 @@ export default function AnalyzerPage() {
                     onClick={handleTextAnalyze}
                     startIcon={loading ? <CircularProgress size={20} /> : <AnalyticsIcon />}
                   >
-                    {loading ? 'Analyzing...' : 'Analyze Resume'}
+                    {loading ? 'Analyzing…' : 'Analyze Resume'}
                   </Button>
                 </>
               )}
             </Paper>
 
-            {/* AI Review */}
+            {/* AI REVIEW */}
             {analysis && (
               <Paper sx={{ p: 3 }}>
                 <Typography variant="h6">AI-Powered Review</Typography>
@@ -332,7 +374,7 @@ export default function AnalyzerPage() {
                   onClick={handleAIReview}
                   startIcon={aiLoading ? <CircularProgress size={20} /> : <AIIcon />}
                 >
-                  {aiLoading ? 'Analyzing...' : 'Run AI Review'}
+                  {aiLoading ? 'Analyzing…' : 'Run AI Review'}
                 </Button>
 
                 {aiFeedback && (
@@ -341,6 +383,7 @@ export default function AnalyzerPage() {
                       <Typography variant="subtitle2" fontWeight={600}>
                         AI Feedback
                       </Typography>
+
                       <Typography variant="body2" mt={1}>
                         {aiFeedback.summary}
                       </Typography>
@@ -375,7 +418,7 @@ export default function AnalyzerPage() {
             )}
           </Grid>
 
-          {/* Right Column */}
+          {/* RIGHT COLUMN */}
           <Grid item xs={12} lg={7}>
             {!analysis && !loading && (
               <Paper sx={{ p: 8, textAlign: 'center' }}>
