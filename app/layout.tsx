@@ -7,6 +7,7 @@ import { Box } from '@mui/material';
 import { createCareerQuillTheme } from '@/theme/theme';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import CookieBanner from '@/components/cookie-consent/CookieBanner';
 import './globals.css';
 
 export default function RootLayout({
@@ -16,13 +17,25 @@ export default function RootLayout({
 }) {
   const [mode, setMode] = useState<'light' | 'dark'>('dark');
   const [mounted, setMounted] = useState(false);
+  const [consent, setConsent] = useState<any>(null);
 
-  // Load theme preference from localStorage
+  // Load theme preference and cookie consent from localStorage
   useEffect(() => {
     const savedMode = localStorage.getItem('theme-mode') as 'light' | 'dark' | null;
     if (savedMode) {
       setMode(savedMode);
     }
+
+    // Load cookie consent
+    try {
+      const storedConsent = localStorage.getItem('cookie-consent');
+      if (storedConsent) {
+        setConsent(JSON.parse(storedConsent));
+      }
+    } catch (error) {
+      console.error('Error loading cookie consent:', error);
+    }
+
     setMounted(true);
   }, []);
 
@@ -53,29 +66,42 @@ export default function RootLayout({
         <meta name="description" content="Build and refine a resume you're proud of with Career Quill - a professional resume builder and analyzer" />
         <meta name="theme-color" content="#C87E42" />
         <title>Career Quill - Resume Builder & Analyzer</title>
-        {/* reCAPTCHA v3 Script */}
+
+        {/* reCAPTCHA v3 Script - Always loaded (necessary for form functionality) */}
         <script
           src={`https://www.google.com/recaptcha/api.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}`}
           async
           defer
         />
-        {/* AdSense Script */}
-        <script async src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE}`}
-          crossOrigin="anonymous"></script>
-        {/* Analytics Script */}
-        <script async src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_ANALYTICS}`}></script>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', '${process.env.NEXT_PUBLIC_ANALYTICS}');
-    `,
-          }}
-        />
 
+        {/* Conditional Analytics Script - Only load if analytics consent is given */}
+        {consent?.analytics && process.env.NEXT_PUBLIC_ANALYTICS && (
+          <>
+            <script
+              async
+              src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_ANALYTICS}`}
+            />
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `
+                  window.dataLayer = window.dataLayer || [];
+                  function gtag(){dataLayer.push(arguments);}
+                  gtag('js', new Date());
+                  gtag('config', '${process.env.NEXT_PUBLIC_ANALYTICS}');
+                `,
+              }}
+            />
+          </>
+        )}
 
+        {/* Conditional AdSense Script - Only load if marketing consent is given */}
+        {consent?.marketing && process.env.NEXT_PUBLIC_ADSENSE && (
+          <script
+            async
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE}`}
+            crossOrigin="anonymous"
+          />
+        )}
       </head>
       <body>
         <ThemeProvider theme={theme}>
@@ -100,6 +126,9 @@ export default function RootLayout({
             </Box>
             <Footer />
           </Box>
+
+          {/* Cookie Consent Banner */}
+          <CookieBanner />
         </ThemeProvider>
       </body>
     </html>

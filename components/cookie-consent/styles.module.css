@@ -1,0 +1,315 @@
+/* Cookie Banner Styles */
+.banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1400;
+  background: var(--banner-bg);
+  border-top: 1px solid var(--banner-border);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+  animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.bannerContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 0;
+  gap: 24px;
+}
+
+.bannerText {
+  flex: 1;
+  min-width: 0;
+}
+
+.bannerActions {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Cookie Modal Styles */
+.modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modalBackdrop {
+  background-color: rgba(0, 0, 0, 0.6);
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modalContent {
+  position: relative;
+  background: var(--modal-bg);
+  border-radius: 16px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 700px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px) scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 24px 16px;
+  flex-shrink: 0;
+}
+
+.closeButton {
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.closeButton:hover {
+  background-color: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.closeButton:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.modalBody {
+  padding: 0 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.categoriesContainer {
+  margin-bottom: 24px;
+}
+
+.categoryItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.categoryInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px 24px;
+  border-top: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
+.footerButton {
+  min-width: 120px;
+}
+
+.customizeButton,
+.rejectButton,
+.acceptButton,
+.footerButton {
+  transition: all 0.2s ease;
+}
+
+.customizeButton:focus-visible,
+.rejectButton:focus-visible,
+.acceptButton:focus-visible,
+.footerButton:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* Dark Mode */
+:global([data-theme='dark']) .banner,
+:global([data-theme='dark']) .modalContent {
+  --banner-bg: #2a2b31;
+  --banner-border: #3c3e46;
+  --modal-bg: #2a2b31;
+  --text-primary: #ffffff;
+  --text-secondary: #aeb1ba;
+  --hover-bg: rgba(255, 255, 255, 0.08);
+  --divider: #3c3e46;
+  --primary-color: #c87e42;
+}
+
+/* Light Mode */
+:global([data-theme='light']) .banner,
+:global([data-theme='light']) .modalContent {
+  --banner-bg: #ffffff;
+  --banner-border: #d3d4d8;
+  --modal-bg: #ffffff;
+  --text-primary: #1a1b1d;
+  --text-secondary: #4d4f57;
+  --hover-bg: rgba(0, 0, 0, 0.04);
+  --divider: #d3d4d8;
+  --primary-color: #c87e42;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .bannerContent {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .bannerActions {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bannerActions button {
+    width: 100%;
+  }
+
+  .modalContent {
+    max-height: 90vh;
+    margin: 8px;
+  }
+
+  .modalHeader {
+    padding: 20px 16px 12px;
+  }
+
+  .modalBody {
+    padding: 0 16px;
+  }
+
+  .modalFooter {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px 20px;
+  }
+
+  .modalFooter > * {
+    width: 100%;
+  }
+
+  .modalFooter > div {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .footerButton {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .categoryItem {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modalHeader h2 {
+    font-size: 1.25rem;
+  }
+
+  .categoryItem {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .categoryItem .MuiFormControlLabel-root {
+    align-self: flex-end;
+  }
+}
+
+/* Scrollbar Styling */
+.modalBody::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modalBody::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modalBody::-webkit-scrollbar-thumb {
+  background: var(--divider);
+  border-radius: 4px;
+}
+
+.modalBody::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  .banner {
+    border-top-width: 2px;
+  }
+
+  .modalContent {
+    border: 2px solid var(--divider);
+  }
+
+  .closeButton:focus-visible,
+  .customizeButton:focus-visible,
+  .rejectButton:focus-visible,
+  .acceptButton:focus-visible,
+  .footerButton:focus-visible {
+    outline-width: 3px;
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .banner,
+  .modalBackdrop,
+  .modalContent {
+    animation: none;
+  }
+
+  .closeButton,
+  .customizeButton,
+  .rejectButton,
+  .acceptButton,
+  .footerButton {
+    transition: none;
+  }
+}
