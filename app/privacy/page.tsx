@@ -190,7 +190,7 @@ export default function PrivacyPage() {
             </li>
             <li>
               <Typography variant="body1" paragraph>
-                <strong>Google reCAPTCHA:</strong> We use reCAPTCHA v3 to prevent spam and abuse on the Resume Analyzer. reCAPTCHA&apos;s data collection is governed by Google&apos;s{' '}
+                <strong>Google reCAPTCHA Enterprise:</strong> We use reCAPTCHA Enterprise to prevent spam and abuse on the Resume Analyzer. reCAPTCHA&apos;s data collection is governed by Google&apos;s{' '}
                 <MuiLink href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" underline="hover">
                   privacy policy
                 </MuiLink>.
