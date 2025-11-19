@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { AppBar, Toolbar, Box, Button, Container } from '@mui/material';
-import QuillIcon from './QuillIcon';
+import Logo from './Logo';
 import ThemeToggle from './ThemeToggle';
 
 interface HeaderProps {
@@ -39,7 +39,7 @@ export default function Header({ mode, onThemeToggle }: HeaderProps) {
                 },
               }}
             >
-              <QuillIcon size={32} />
+              <Logo size={32} />
               <Box
                 component="span"
                 sx={{
