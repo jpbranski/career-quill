@@ -67,9 +67,9 @@ export default function RootLayout({
         <meta name="theme-color" content="#C87E42" />
         <title>Career Quill - Resume Builder & Analyzer</title>
 
-        {/* reCAPTCHA v3 Script - Always loaded (necessary for form functionality) */}
+        {/* reCAPTCHA Enterprise Script - Always loaded (necessary for form functionality) */}
         <script
-          src={`https://www.google.com/recaptcha/api.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}`}
+          src={`https://www.google.com/recaptcha/enterprise.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''}`}
           async
           defer
         />

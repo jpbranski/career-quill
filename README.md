@@ -25,7 +25,7 @@
 - 💡 **Smart Suggestions**: Get actionable recommendations for improvement
 - 🤖 **AI-Powered Review**: GPT-5-mini integration for detailed, structured critique
 - 🎯 **ATS Optimization**: Keyword density and formatting checks
-- 🛡️ **reCAPTCHA v3**: Spam protection for file uploads and AI features
+- 🛡️ **reCAPTCHA Enterprise**: Spam protection for file uploads and AI features
 - ⏱️ **Rate Limiting**: Client + server rate limiting (5 requests/day, 30s cooldown)
 
 ### Technical Highlights
@@ -70,8 +70,9 @@
    OPENAI_API_KEY="sk-your-openai-api-key-here"
    AI_MODEL="gpt-5-mini"
 
-   # reCAPTCHA v3 Configuration
-   RECAPTCHA_SECRET_KEY="your-recaptcha-secret-key"
+   # reCAPTCHA Enterprise Configuration
+   GCLOUD_PROJECT_ID="your-google-cloud-project-id"
+   RECAPTCHA_API_KEY="your-google-cloud-api-key"
    NEXT_PUBLIC_RECAPTCHA_SITE_KEY="your-recaptcha-site-key"
 
    # Rate Limiting
@@ -81,8 +82,11 @@
 
    **Getting API Keys:**
    - **OpenAI**: Get your key from [OpenAI Platform](https://platform.openai.com/api-keys)
-   - **reCAPTCHA**: Get your keys from [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin)
-     - Create a new site with reCAPTCHA v3
+   - **reCAPTCHA Enterprise**: Set up in [Google Cloud Console](https://cloud.google.com/recaptcha-enterprise/docs/create-key)
+     - Create a Google Cloud project
+     - Enable reCAPTCHA Enterprise API
+     - Create a site key
+     - Create an API key with reCAPTCHA Enterprise API enabled
      - Add your domain(s) (e.g., localhost, yourapp.vercel.app)
 
    > **Note**: The AI review feature requires both OpenAI API key and reCAPTCHA configuration. The app works without these, but AI analysis and file upload features will require verification.
@@ -200,8 +204,9 @@ Career Quill includes 6 professionally designed resume templates:
    - Add the following required variables:
      - `OPENAI_API_KEY`: Your OpenAI API key
      - `AI_MODEL`: `gpt-5-mini` (or your preferred model)
-     - `RECAPTCHA_SECRET_KEY`: Your reCAPTCHA secret key
-     - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`: Your reCAPTCHA site key
+     - `GCLOUD_PROJECT_ID`: Your Google Cloud project ID
+     - `RECAPTCHA_API_KEY`: Your Google Cloud API key with reCAPTCHA Enterprise enabled
+     - `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`: Your reCAPTCHA Enterprise site key
      - `RATE_LIMIT_MAX_PER_DAY`: `5` (or your preferred limit)
      - `RATE_LIMIT_COOLDOWN_SECONDS`: `30` (or your preferred cooldown)
 
@@ -225,8 +230,9 @@ npm start
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | Yes (for AI) | - | OpenAI API key for AI resume review (never exposed to client) |
 | `AI_MODEL` | No | `gpt-5-mini` | OpenAI model to use for resume critique |
-| `RECAPTCHA_SECRET_KEY` | Yes (for AI) | - | reCAPTCHA v3 secret key (never exposed to client) |
-| `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | Yes (for AI) | - | reCAPTCHA v3 site key (public, safe to expose) |
+| `GCLOUD_PROJECT_ID` | Yes (for AI) | - | Google Cloud project ID for reCAPTCHA Enterprise (never exposed to client) |
+| `RECAPTCHA_API_KEY` | Yes (for AI) | - | Google Cloud API key with reCAPTCHA Enterprise enabled (never exposed to client) |
+| `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | Yes (for AI) | - | reCAPTCHA Enterprise site key (public, safe to expose) |
 | `RATE_LIMIT_MAX_PER_DAY` | No | `5` | Maximum AI requests per user per day |
 | `RATE_LIMIT_COOLDOWN_SECONDS` | No | `30` | Cooldown period between AI requests |
 
@@ -261,7 +267,7 @@ AI review requests are protected with multiple layers:
   - IP-based tracking with in-memory store
   - Configurable limits via environment variables
   - Protects against abuse even if client-side is bypassed
-- **reCAPTCHA v3 Protection**:
+- **reCAPTCHA Enterprise Protection**:
   - Single verification gates both file upload and AI critique
   - Score-based validation (threshold: 0.5)
   - Verification state persists in localStorage
