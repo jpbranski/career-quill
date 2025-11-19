@@ -152,10 +152,43 @@ function calculateScore(metrics: any, wordCount: number): number {
 }
 
 // ==================================================
-// 7. MAIN ANALYZER ENTRY POINT
+// 7. TYPES
 // ==================================================
 
-export function analyzeResume(text: string) {
+export interface Suggestion {
+  id: string;
+  type: 'error' | 'warning' | 'info' | 'success';
+  title: string;
+  description: string;
+  category: 'structure' | 'content' | 'formatting' | 'keywords';
+}
+
+export interface AnalysisResult {
+  score: number;
+  wordCount: number;
+  readingTimeMinutes: number;
+  suggestions: Suggestion[];
+  metrics: {
+    hasContactInfo: boolean;
+    hasSummary: boolean;
+    hasExperience: boolean;
+    hasEducation: boolean;
+    hasSkills: boolean;
+    bulletCount: number;
+    actionVerbCount: number;
+    quantifiedBullets: number;
+    paragraphCount: number;
+    longParagraphs: number;
+    averageBulletLength: number;
+    dateConsistency: boolean;
+  };
+}
+
+// ==================================================
+// 8. MAIN ANALYZER ENTRY POINT
+// ==================================================
+
+export async function analyzeResume(text: string): Promise<AnalysisResult> {
   // Fix PDF OCR weirdness
   const cleaned = fixOcrSpacing(text);
 
