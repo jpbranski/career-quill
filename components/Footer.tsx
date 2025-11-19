@@ -76,6 +76,20 @@ export default function Footer() {
 
             <Box>
               <Typography variant="subtitle2" fontWeight={600} mb={1}>
+                About
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <MuiLink component={Link} href="/about" underline="hover" color="text.secondary">
+                  About
+                </MuiLink>
+                <MuiLink component={Link} href="/contact" underline="hover" color="text.secondary">
+                  Contact
+                </MuiLink>
+              </Box>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle2" fontWeight={600} mb={1}>
                 Legal
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
