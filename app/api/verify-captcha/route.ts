@@ -13,18 +13,20 @@ export async function POST(request: NextRequest) {
     const projectId = process.env.GCLOUD_PROJECT_ID;
 
     if (!siteKey || !apiKey || !projectId) {
+      console.error("Missing Env Vars: Check NEXT_PUBLIC_RECAPTCHA_SITE_KEY, RECAPTCHA_API_KEY, GCLOUD_PROJECT_ID");
       return NextResponse.json(
-        { ok: false, error: "Missing reCAPTCHA environment variables" },
+        { ok: false, error: "Server configuration error" },
         { status: 500 }
       );
     }
 
+    // Construct the Enterprise URL
     const verifyUrl = `https://recaptchaenterprise.googleapis.com/v1/projects/${projectId}/assessments?key=${apiKey}`;
 
     const payload = {
       event: {
         token,
-        expectedAction: action ?? "resume_verification",
+        expectedAction: action, // Ensure this matches what you sent from frontend
         siteKey,
       },
     };
@@ -37,21 +39,26 @@ export async function POST(request: NextRequest) {
 
     const result = await googleRes.json();
 
-    console.log("Google verification result:", result);
+    // Check for valid response structure
+    if (!result.riskAnalysis) {
+      console.error("Google Enterprise Error:", result);
+      return NextResponse.json({ ok: false, error: "Verification failed upstream" });
+    }
 
-    const score = result?.riskAnalysis?.score ?? 0;
+    const score = result.riskAnalysis.score;
+    const reasons = result.riskAnalysis.reasons || [];
+    
+    console.log(`Captcha Score: ${score} | Action: ${action}`);
 
-    return NextResponse.json({
-      ok: score >= 0.5,
-      score,
-      reasons: result?.riskAnalysis?.reasons ?? [],
-    });
+    // Threshold is usually 0.5 (0.0 is bot, 1.0 is human)
+    if (score >= 0.5) {
+        return NextResponse.json({ ok: true, score });
+    } else {
+        return NextResponse.json({ ok: false, score, reasons });
+    }
+
   } catch (err) {
-    console.error("reCAPTCHA verification error:", err);
-    return NextResponse.json({ ok: false, error: "Verification failed" }, { status: 500 });
+    console.error("reCAPTCHA API route error:", err);
+    return NextResponse.json({ ok: false, error: "Internal Server Error" }, { status: 500 });
   }
-}
-
-export async function GET() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }
