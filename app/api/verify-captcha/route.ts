@@ -1,79 +1,55 @@
-import { NextRequest, NextResponse } from 'next/server';
-
-interface RecaptchaResponse {
-  success: boolean;
-  score?: number;
-  action?: string;
-  challenge_ts?: string;
-  hostname?: string;
-  'error-codes'?: string[];
-}
+import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if reCAPTCHA secret key is configured
-    if (!process.env.RECAPTCHA_SECRET_KEY) {
+    const { token, action } = await request.json();
+
+    if (!token) {
+      return NextResponse.json({ ok: false, error: "Missing token" }, { status: 400 });
+    }
+
+    if (
+      !process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ||
+      !process.env.RECAPTCHA_API_KEY ||
+      !process.env.GCLOUD_PROJECT_ID
+    ) {
       return NextResponse.json(
-        { ok: false, error: 'reCAPTCHA not configured' },
+        { ok: false, error: "Missing reCAPTCHA environment variables" },
         { status: 500 }
       );
     }
 
-    // Parse request body
-    const { recaptchaToken } = await request.json();
+    const verifyUrl = `https://recaptchaenterprise.googleapis.com/v1/projects/${process.env.GCLOUD_PROJECT_ID}/assessments?key=${process.env.RECAPTCHA_API_KEY}`;
 
-    if (!recaptchaToken || typeof recaptchaToken !== 'string') {
-      return NextResponse.json(
-        { ok: false, error: 'Invalid reCAPTCHA token' },
-        { status: 400 }
-      );
-    }
-
-    // Verify with Google reCAPTCHA API
-    const verificationURL = 'https://www.google.com/recaptcha/api/siteverify';
-    const verificationResponse = await fetch(verificationURL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+    const payload = {
+      event: {
+        token,
+        expectedAction: action ?? "resume_verification",
+        siteKey: process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY,
       },
-      body: `secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${recaptchaToken}`,
+    };
+
+    const googleRes = await fetch(verifyUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
 
-    const verificationData: RecaptchaResponse = await verificationResponse.json();
+    const result = await googleRes.json();
 
-    // Check if verification was successful
-    if (!verificationData.success) {
-      console.error('reCAPTCHA verification failed:', verificationData['error-codes']);
-      return NextResponse.json(
-        { ok: false, error: 'Captcha verification failed' },
-        { status: 400 }
-      );
-    }
+    const score = result?.riskAnalysis?.score ?? 0;
 
-    // Check the score (for reCAPTCHA v3, score should be >= 0.5)
-    if (verificationData.score !== undefined && verificationData.score < 0.5) {
-      console.warn('reCAPTCHA score too low:', verificationData.score);
-      return NextResponse.json(
-        { ok: false, error: 'Captcha score too low' },
-        { status: 400 }
-      );
-    }
-
-    // Verification successful
-    return NextResponse.json({ ok: true });
-  } catch (error: any) {
-    console.error('Error verifying reCAPTCHA:', error);
-    return NextResponse.json(
-      { ok: false, error: 'Failed to verify captcha' },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      ok: score >= 0.5,
+      score,
+      reasons: result?.riskAnalysis?.reasons,
+    });
+  } catch (err) {
+    console.error("reCAPTCHA verification error:", err);
+    return NextResponse.json({ ok: false, error: "Verification failed" }, { status: 500 });
   }
 }
 
-// Handle unsupported methods
 export async function GET() {
-  return NextResponse.json(
-    { error: 'Method not allowed' },
-    { status: 405 }
-  );
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }
