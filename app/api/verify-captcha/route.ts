@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const { token, action } = await request.json();
+    const body = await request.json();
+    const token = body.token || body.recaptchaToken;
+    const action = body.action || "resume_verification";
+
 
     if (!token) {
       return NextResponse.json({ ok: false, error: "Missing token" }, { status: 400 });
