@@ -21,11 +21,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import Logo from './Logo';
 import ThemeToggle from './ThemeToggle';
-
-interface HeaderProps {
-  mode: 'light' | 'dark';
-  onThemeToggle: () => void;
-}
+import { useThemeMode } from '@/providers/ThemeContext';
 
 const navLinks = [
   { label: 'Resume Builder', href: '/builder' },
@@ -34,10 +30,11 @@ const navLinks = [
   { label: 'Contact', href: '/contact' },
 ];
 
-export default function Header({ mode, onThemeToggle }: HeaderProps) {
+export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { mode, toggleTheme } = useThemeMode();
 
   const toggleMobileMenu = () => {
     setMobileMenuOpen(!mobileMenuOpen);
@@ -109,12 +106,12 @@ export default function Header({ mode, onThemeToggle }: HeaderProps) {
                   {link.label}
                 </Button>
               ))}
-              <ThemeToggle mode={mode} onToggle={onThemeToggle} />
+              <ThemeToggle mode={mode} onToggle={toggleTheme} />
             </Box>
 
             {/* Mobile Navigation Toggle */}
             <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center', gap: 1 }}>
-              <ThemeToggle mode={mode} onToggle={onThemeToggle} />
+              <ThemeToggle mode={mode} onToggle={toggleTheme} />
               <IconButton
                 onClick={toggleMobileMenu}
                 sx={{
