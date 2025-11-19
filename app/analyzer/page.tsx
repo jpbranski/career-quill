@@ -163,7 +163,7 @@ export default function AnalyzerPage() {
       }
 
       setResumeText(text);
-      const analysisResult = analyzeResume(text);
+      const analysisResult = await analyzeResume(text);
       setAnalysis(analysisResult);
     } catch (err) {
       console.error('Error processing file:', err);
@@ -173,7 +173,7 @@ export default function AnalyzerPage() {
     }
   };
 
-  const handleTextAnalyze = () => {
+  const handleTextAnalyze = async () => {
     if (!resumeText.trim()) {
       setError('Please enter or upload your resume text');
       return;
@@ -183,7 +183,7 @@ export default function AnalyzerPage() {
     setError(null);
 
     try {
-      const analysisResult = analyzeResume(resumeText);
+      const analysisResult = await analyzeResume(resumeText);
       setAnalysis(analysisResult);
     } catch (err) {
       console.error('Error analyzing text:', err);

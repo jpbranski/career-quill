@@ -9,9 +9,16 @@ export const runtime = "nodejs";
 // --------------------------------------
 // ENV + CONSTANTS
 // --------------------------------------
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let openai: OpenAI | null = null;
+
+function getOpenAI() {
+  if (!openai) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+}
 
 // GPT-5-mini (MUST NOT use json_object mode)
 const MODEL = process.env.AI_MODEL || "gpt-5-mini";
@@ -162,7 +169,7 @@ ${cleanedResume}
     // Call OpenAI Responses API (GPT-5-mini)
     // ❗ NO json_object mode allowed
     // --------------------------------------
-    const aiResult = await openai.responses.create({
+    const aiResult = await getOpenAI().responses.create({
       model: MODEL,
       input: prompt,
       // NO response_format here — gpt-5-mini does not support it
