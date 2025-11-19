@@ -1,3 +1,4 @@
+'use server'
 // ================================================
 // Resume Analyzer (Improved)
 // Reads action verbs from /data/ACTION_VERBS.txt
