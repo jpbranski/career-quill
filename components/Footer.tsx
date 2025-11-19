@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Box, Container, Typography, Link as MuiLink } from '@mui/material';
-import QuillIcon from './QuillIcon';
+import Logo from './Logo';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -31,7 +32,7 @@ export default function Footer() {
           {/* Brand Section */}
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'center', md: 'flex-start' } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
-              <QuillIcon size={28} />
+              <Logo size={28} />
               <Typography
                 variant="h6"
                 sx={{
@@ -64,11 +65,42 @@ export default function Footer() {
                 Tools
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                <MuiLink href="/builder" underline="hover" color="text.secondary">
+                <MuiLink component={Link} href="/builder" underline="hover" color="text.secondary">
                   Resume Builder
                 </MuiLink>
-                <MuiLink href="/analyzer" underline="hover" color="text.secondary">
+                <MuiLink component={Link} href="/analyzer" underline="hover" color="text.secondary">
                   Resume Analyzer
+                </MuiLink>
+              </Box>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle2" fontWeight={600} mb={1}>
+                About
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <MuiLink component={Link} href="/about" underline="hover" color="text.secondary">
+                  About
+                </MuiLink>
+                <MuiLink component={Link} href="/contact" underline="hover" color="text.secondary">
+                  Contact
+                </MuiLink>
+              </Box>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle2" fontWeight={600} mb={1}>
+                Legal
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <MuiLink component={Link} href="/privacy" underline="hover" color="text.secondary">
+                  Privacy Policy
+                </MuiLink>
+                <MuiLink component={Link} href="/terms" underline="hover" color="text.secondary">
+                  Terms of Service
+                </MuiLink>
+                <MuiLink component={Link} href="/accessibility" underline="hover" color="text.secondary">
+                  Accessibility
                 </MuiLink>
               </Box>
             </Box>
