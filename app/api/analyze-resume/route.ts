@@ -63,6 +63,30 @@ function checkServerRateLimit(ip: string) {
 }
 
 // --------------------------------------
+// Bullet & structure normalizer
+// --------------------------------------
+function normalizeBullets(text: string): string {
+  return text
+    // Convert common bullet characters to "-"
+    .replace(/^[\u2022\u25E6\u25AA\u2023\u2043●▪•]+/gm, "- ")
+    // Lines starting with • or similar that PDF.js turns into odd symbols
+    .replace(/^\s*[•●▪]/gm, "- ")
+    // Replace leading hyphen/dash bullets
+    .replace(/^\s*[-–—]\s*/gm, "- ")
+    // If line starts with a strong action verb, treat it as a bullet
+    .replace(
+      /^\s*(Implemented|Led|Managed|Created|Developed|Built|Designed|Refactored|Enhanced|Optimized|Architected|Spearheaded|Coordinated|Maintained|Improved|Increased|Reduced|Collaborated|Solved|Trained|Mentored|Automated)\b/gm,
+      "- $1"
+    )
+    // Remove duplicate bullets ("- - ")
+    .replace(/^- -/gm, "- ")
+    // Ensure each bullet is its own line
+    .replace(/-\s+/g, "- ")
+    .trim();
+}
+
+
+// --------------------------------------
 // POST — Resume Analysis
 // --------------------------------------
 export async function POST(req: Request) {
@@ -81,6 +105,7 @@ export async function POST(req: Request) {
     }
 
     const { resumeText } = body;
+    const cleanedResume = normalizeBullets(resumeText);
 
     if (!resumeText || resumeText.trim().length < 30) {
       return NextResponse.json(
@@ -110,17 +135,28 @@ export async function POST(req: Request) {
     // Build prompt
     // --------------------------------------
     const prompt = `
-You are an expert resume editor. Analyze the following resume text and produce a STRICT JSON object with keys:
+You are an expert résumé editor. You are analyzing résumé text extracted from a PDF, which may contain OCR or text-extraction artifacts such as:
+- Incorrect spacing inside words (e.g., "profi cien t", "engi neer")
+- Broken ligatures
+- Random line breaks
+- Bullet symbols converted into "-"
+- Words split across lines
 
-- "summaryCritique": A concise 2–3 paragraph critique.
-- "improvements": An array of 8–12 concrete improvement suggestions.
-- "rewrittenSummary": A polished 2–3 sentence professional summary.
+STRICTLY IGNORE all spacing or OCR artifacts. Do NOT list them as issues. ONLY focus on the quality of the writing, clarity, strength of bullet points, action verbs, quantification, impact, and professional tone.
 
-The output MUST be valid JSON only, no explanation or prose outside the JSON object.
+Analyze the following normalized résumé text (bullets begin with "- ") and produce a STRICT JSON object with:
 
-Resume text:
-${resumeText}
+- "summaryCritique": A 2–3 paragraph critique focusing on clarity, relevance, impact, and effectiveness of the content (NOT formatting or extraction errors).
+- "improvements": 8–12 specific suggestions that improve bullet impact, action verbs, quantification, readability, and structure—but NEVER include spacing/OCR errors or cosmetic formatting.
+- "rewrittenSummary": A polished 2–3 sentence professional summary written in a confident, recruiter-friendly tone.
+
+The output MUST be valid JSON only, with NO text outside the JSON.
+
+Résumé text:
+${cleanedResume}
 `;
+
+
 
     // --------------------------------------
     // Call OpenAI Responses API (GPT-5-mini)
@@ -197,7 +233,7 @@ ${resumeText}
       {
         ok: true,
         summaryCritique: parsed.summaryCritique,
-        bulletSuggestions: parsed.improvements, 
+        bulletSuggestions: parsed.improvements,
         rewrittenSummary: parsed.rewrittenSummary,
       },
       { status: 200 }
