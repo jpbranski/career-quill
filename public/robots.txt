@@ -4,7 +4,7 @@ Allow: /
 Disallow: /api/
 
 # Host
-Host: https://www.careerquill.com
+Host: https://www.thecareerquill.com
 
 # Sitemaps
-Sitemap: https://www.careerquill.com/sitemap.xml
+Sitemap: https://www.thecareerquill.com/sitemap.xml
