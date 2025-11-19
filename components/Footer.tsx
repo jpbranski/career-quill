@@ -102,6 +102,9 @@ export default function Footer() {
                 <MuiLink component={Link} href="/accessibility" underline="hover" color="text.secondary">
                   Accessibility
                 </MuiLink>
+                <MuiLink href="/sitemap.xml" underline="hover" color="text.secondary" target="_blank" rel="noopener">
+                  Sitemap
+                </MuiLink>
               </Box>
             </Box>
 
