@@ -1,170 +1,202 @@
-import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import { NextResponse } from 'next/server'
+import OpenAI from 'openai'
 
-// --------------------------------------
-// Runtime (force Node.js runtime)
-// --------------------------------------
-export const runtime = "nodejs";
+export const runtime = 'nodejs'
 
-// --------------------------------------
+// ================================================================
 // OpenAI client
-// --------------------------------------
-let openai: OpenAI | null = null;
+// ================================================================
+let client: OpenAI | null = null
 
-function getOpenAI() {
-  if (!openai) {
-    openai = new OpenAI({
+function getClient() {
+  if (!client) {
+    client = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
-    });
+    })
   }
-  return openai;
+  return client
 }
 
-const MODEL = process.env.AI_MODEL || "gpt-5-mini";
+const MODEL = process.env.AI_MODEL || 'gpt-5-mini'
 
-// --------------------------------------
+// ================================================================
+// Universal extractor for Responses API output (text + JSON)
+// ================================================================
+function extractTextAndJSON(aiResult: any): { raw: string; json: any | null } {
+  if (!aiResult) return { raw: '', json: null }
+
+  let rawText = ''
+
+  // 1. Standard Responses API: aiResult.output[]
+  if (Array.isArray(aiResult.output)) {
+    for (const block of aiResult.output) {
+      // output_text blocks
+      if (block?.type === 'output_text' && Array.isArray(block.content)) {
+        for (const c of block.content) {
+          if (typeof c?.text === 'string') rawText += c.text + '\n'
+        }
+      }
+
+      // message-style blocks
+      if (block?.type === 'message' && Array.isArray(block.content)) {
+        for (const c of block.content) {
+          if (typeof c?.text === 'string') rawText += c.text + '\n'
+        }
+      }
+
+      // generic text field on block
+      if (typeof block?.text === 'string') {
+        rawText += block.text + '\n'
+      }
+    }
+  }
+
+  // 2. Fallback shapes (some SDKs/models)
+  if (!rawText && typeof aiResult.output_text === 'string') {
+    rawText = aiResult.output_text
+  }
+
+  if (!rawText) {
+    const maybe =
+      aiResult?.text ??
+      aiResult?.message ??
+      aiResult?.content ??
+      aiResult?.response
+    if (typeof maybe === 'string') rawText = maybe
+  }
+
+  rawText = rawText.trim()
+
+  // 3. Try to parse JSON
+  let parsed: any = null
+  if (rawText) {
+    try {
+      parsed = JSON.parse(rawText)
+    } catch {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}$/)
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0])
+        } catch {
+          parsed = null
+        }
+      }
+    }
+  }
+
+  return { raw: rawText, json: parsed }
+}
+
+// ================================================================
 // Rate limiting
-// --------------------------------------
-type RateLimitEntry = {
-  count: number;
-  lastTimestamp: number;
-  dayStart: number;
-};
+// ================================================================
+type RateEntry = {
+  count: number
+  lastTimestamp: number
+  dayStart: number
+}
 
 type RateLimitResult =
-  | { ok: true; entry: RateLimitEntry }
-  | { ok: false; type: "cooldown"; remaining: number }
-  | { ok: false; type: "daily_limit" };
+  | { ok: true; entry: RateEntry }
+  | { ok: false; reason: 'cooldown'; remaining: number }
+  | { ok: false; reason: 'daily_limit' }
 
-const rateStore = new Map<string, RateLimitEntry>();
+const rateStore = new Map<string, RateEntry>()
 
-const MAX_PER_DAY = Number(process.env.RATE_LIMIT_MAX_PER_DAY || 5);
+const MAX_PER_DAY = Number(process.env.RATE_LIMIT_MAX_PER_DAY || 5)
 const COOLDOWN_SECONDS = Number(
   process.env.RATE_LIMIT_COOLDOWN_SECONDS || 30
-);
+)
 
 function getClientIp(req: Request): string {
-  const fwd = req.headers.get("x-forwarded-for");
-  if (!fwd) return "unknown";
-  return fwd.split(",")[0].trim();
+  const fwd = req.headers.get('x-forwarded-for')
+  if (!fwd) return 'unknown'
+  return fwd.split(',')[0].trim()
 }
 
-function checkServerRateLimit(ip: string): RateLimitResult {
-  const now = Date.now();
-  const existing =
-    rateStore.get(ip) ||
-    ({
+function checkRateLimit(ip: string): RateLimitResult {
+  const now = Date.now()
+  const entry: RateEntry =
+    rateStore.get(ip) ?? {
       count: 0,
       lastTimestamp: 0,
       dayStart: now,
-    } as RateLimitEntry);
+    }
 
-  // Reset daily window if more than 24h passed
-  if (now - existing.dayStart > 24 * 60 * 60 * 1000) {
-    existing.count = 0;
-    existing.dayStart = now;
+  // Reset daily window if more than 24h has passed
+  if (now - entry.dayStart > 24 * 60 * 60 * 1000) {
+    entry.count = 0
+    entry.dayStart = now
   }
 
-  const secondsSinceLast = (now - existing.lastTimestamp) / 1000;
+  const secondsSinceLast = (now - entry.lastTimestamp) / 1000
 
   if (secondsSinceLast < COOLDOWN_SECONDS) {
     return {
       ok: false,
-      type: "cooldown",
+      reason: 'cooldown',
       remaining: Math.ceil(COOLDOWN_SECONDS - secondsSinceLast),
-    };
+    }
   }
 
-  if (existing.count >= MAX_PER_DAY) {
-    return { ok: false, type: "daily_limit" };
+  if (entry.count >= MAX_PER_DAY) {
+    return { ok: false, reason: 'daily_limit' }
   }
 
-  return { ok: true, entry: existing };
+  return { ok: true, entry }
 }
 
-// --------------------------------------
-// Bullet & structure normalizer
-// --------------------------------------
+// ================================================================
+// Bullet normalizer (for AI prompt)
+// ================================================================
 function normalizeBullets(text: string): string {
   return text
-    .replace(/^[\u2022\u25E6\u25AA\u2023\u2043●▪•]+/gm, "- ")
-    .replace(/^\s*[•●▪]/gm, "- ")
-    .replace(/^\s*[-–—]\s*/gm, "- ")
+    .replace(/^[\u2022\u25E6\u25AA\u2023\u2043●▪•]+/gm, '- ')
+    .replace(/^\s*[•●▪]/gm, '- ')
+    .replace(/^\s*[-–—]\s*/gm, '- ')
     .replace(
       /^\s*(Implemented|Led|Managed|Created|Developed|Built|Designed|Refactored|Enhanced|Optimized|Architected|Spearheaded|Coordinated|Maintained|Improved|Increased|Reduced|Collaborated|Solved|Trained|Mentored|Automated)\b/gm,
-      "- $1"
+      '- $1'
     )
-    .replace(/^- -/gm, "- ")
-    .replace(/-\s+/g, "- ")
-    .trim();
+    .replace(/^- -/gm, '- ')
+    .replace(/-\s+/g, '- ')
+    .trim()
 }
 
-// --------------------------------------
-// Responses API type guard
-// --------------------------------------
-type TextBlock = {
-  type: "output_text";
-  content: { type: string; text: string }[];
-};
-
-function isTextBlock(item: any): item is TextBlock {
-  return (
-    item &&
-    typeof item === "object" &&
-    item.type === "output_text" &&
-    Array.isArray(item.content) &&
-    item.content.length > 0 &&
-    typeof item.content[0]?.text === "string"
-  );
-}
-
-// --------------------------------------
+// ================================================================
 // POST handler
-// --------------------------------------
+// ================================================================
 export async function POST(req: Request) {
   try {
-    const ip = getClientIp(req);
+    const ip = getClientIp(req)
 
-    // Parse JSON body safely
-    let body: any;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json(
-        { error: "Invalid JSON body" },
-        { status: 400 }
-      );
-    }
-
-    const { resumeText } = body ?? {};
-    const cleanedResume = normalizeBullets(resumeText || "");
+    const body = await req.json().catch(() => null)
+    const resumeText: string | undefined = body?.resumeText
 
     if (!resumeText || resumeText.trim().length < 30) {
       return NextResponse.json(
-        { error: "Resume text is too short or missing" },
+        { error: 'Resume text is too short or missing' },
         { status: 400 }
-      );
+      )
     }
 
-    // Rate limit checks
-    const rl = checkServerRateLimit(ip);
-
+    // Rate limit check
+    const rl = checkRateLimit(ip)
     if (!rl.ok) {
-      if (rl.type === "cooldown") {
+      if (rl.reason === 'cooldown') {
         return NextResponse.json(
-          { error: "cooldown", remaining: rl.remaining },
+          { error: 'cooldown', remaining: rl.remaining },
           { status: 429 }
-        );
+        )
       }
-      if (rl.type === "daily_limit") {
-        return NextResponse.json(
-          { error: "daily_limit" },
-          { status: 429 }
-        );
-      }
+      return NextResponse.json(
+        { error: 'daily_limit' },
+        { status: 429 }
+      )
     }
 
-    // Build prompt
+    const cleaned = normalizeBullets(resumeText)
+
     const prompt = `
 You are an expert résumé editor. You are analyzing résumé text extracted from a PDF, which may contain OCR or text-extraction artifacts such as:
 - Incorrect spacing inside words (e.g., "profi cien t", "engi neer")
@@ -184,78 +216,44 @@ Analyze the following normalized résumé text (bullets begin with "- ") and pro
 The output MUST be valid JSON only, with NO text outside the JSON.
 
 Résumé text:
-${cleanedResume}
-`;
+${cleaned}
+`
 
-    // Call OpenAI Responses API
-    const client = getOpenAI();
-    const aiResult = await client.responses.create({
+    const aiResult = await getClient().responses.create({
       model: MODEL,
       input: prompt,
-    });
+    })
 
-    // Extract first output block; type as any to dodge SDK union friction,
-    // then validate with our own runtime guard.
-    const rawItem: any = (aiResult as any).output?.[0];
+    const { raw, json } = extractTextAndJSON(aiResult)
 
-    if (!isTextBlock(rawItem)) {
-      console.error(
-        "AI ERROR: Unexpected output block:",
-        JSON.stringify(rawItem, null, 2)
-      );
+    if (!json) {
+      console.error('AI JSON parse failure:', raw)
       return NextResponse.json(
-        { error: "AI returned an unexpected output format." },
+        { error: 'invalid_ai_json', raw },
         { status: 500 }
-      );
+      )
     }
 
-    const textBlock: TextBlock = rawItem;
-    const outputText = textBlock.content[0].text;
-
-    // Parse JSON produced by the model
-    let parsed: any;
-    try {
-      parsed = JSON.parse(outputText);
-    } catch {
-      const jsonMatch = outputText.match(/\{[\s\S]*\}$/);
-      if (!jsonMatch) {
-        console.error("JSON PARSE FAIL:", outputText);
-        return NextResponse.json(
-          {
-            error: "AI output was not valid JSON.",
-            raw: outputText,
-          },
-          { status: 500 }
-        );
-      }
-      parsed = JSON.parse(jsonMatch[0]);
-    }
-
-    // Update rate limiting entry (we know rl.ok === true here)
-    if (rl.ok) {
-      const entry = rl.entry;
-      entry.count += 1;
-      entry.lastTimestamp = Date.now();
-      rateStore.set(ip, entry);
-    }
+    // Update rate entry now that the call succeeded
+    const entry = rl.entry
+    entry.count += 1
+    entry.lastTimestamp = Date.now()
+    rateStore.set(ip, entry)
 
     return NextResponse.json(
       {
         ok: true,
-        summaryCritique: parsed.summaryCritique,
-        bulletSuggestions: parsed.improvements,
-        rewrittenSummary: parsed.rewrittenSummary,
+        summaryCritique: json.summaryCritique,
+        bulletSuggestions: json.improvements,
+        rewrittenSummary: json.rewrittenSummary,
       },
       { status: 200 }
-    );
+    )
   } catch (err) {
-    console.error(
-      "UNEXPECTED AI ROUTE ERROR:",
-      typeof err === "string" ? err : JSON.stringify(err, null, 2)
-    );
+    console.error('AI REVIEW ERROR:', err)
     return NextResponse.json(
-      { error: "Failed to analyze resume." },
+      { error: 'server_failure' },
       { status: 500 }
-    );
+    )
   }
 }
