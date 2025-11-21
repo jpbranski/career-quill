@@ -9,13 +9,13 @@ import {
   Button,
   TextField,
   Paper,
+  Grid,
   Alert,
   CircularProgress,
   Tabs,
   Tab,
   Divider,
 } from '@mui/material';
-import Grid from '@mui/material/Grid2';
 import {
   Analytics as AnalyticsIcon,
   AutoAwesome as AIIcon,
@@ -31,83 +31,22 @@ import {
   getRemainingRequests,
   getTimeUntilNextRequest,
 } from '@/lib/rateLimit';
+
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 
-// Configure PDF.js worker with local file
+// PDF worker setup
 if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
 }
 
-// Declare grecaptcha for TypeScript
+// Declare global types for reCAPTCHA Enterprise
 declare global {
   interface Window {
-    grecaptcha: {
-      enterprise: {
-        ready: (cb: () => void) => void;
-        execute: (siteKey: string, options: { action: string }) => Promise<string>;
-      };
-    };
+    grecaptcha: any;
   }
 }
 
-/* ============================================================
-    Recaptcha Helper
-   ============================================================ */
-async function verifyRecaptcha(action: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!window.grecaptcha?.enterprise) {
-      console.error('reCAPTCHA Enterprise not available on window');
-      reject(new Error('reCAPTCHA not loaded'));
-      return;
-    }
-
-    window.grecaptcha.enterprise.ready(async () => {
-      try {
-        const token = await window.grecaptcha.enterprise.execute(
-          process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || '',
-          { action }
-        );
-        resolve(token);
-      } catch (error) {
-        console.error('reCAPTCHA execution failed:', error);
-        reject(error);
-      }
-    });
-  });
-}
-
-/* ============================================================
-    Server-side Recaptcha Validation
-   ============================================================ */
-async function verifyAction(action: string): Promise<boolean> {
-  try {
-    console.log(`Verifying reCAPTCHA action: ${action}`);
-    const token = await verifyRecaptcha(action);
-
-    const res = await fetch('/api/verify-recaptcha', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, action }),
-    });
-
-    if (!res.ok) {
-      console.error('reCAPTCHA verification failed with status:', res.status);
-      return false;
-    }
-
-    const data = await res.json();
-    console.log('reCAPTCHA verification response:', data);
-    return data.success === true;
-  } catch (error) {
-    console.error('Error verifying reCAPTCHA:', error);
-    return false;
-  }
-}
-
-/* ============================================================
-    Types
-   ============================================================ */
 interface AIFeedback {
   summary: string;
   bulletSuggestions: string[];
@@ -123,28 +62,62 @@ export default function AnalyzerPage() {
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAILoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const [fileName, setFileName] = useState<string | null>(null);
 
   /* ============================================================
-      PDF / DOCX Parsing Helpers
+      HELPER: Invisible Verification
      ============================================================ */
-  const extractTextFromPDF = async (file: File): Promise<string> => {
-    const arrayBuffer = await file.arrayBuffer();
-    const typedArray = new Uint8Array(arrayBuffer);
-    const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
-    let fullText = '';
+  const verifyAction = async (actionName: string): Promise<boolean> => {
+    try {
+      if (!window.grecaptcha || !window.grecaptcha.enterprise) {
+        console.warn('reCAPTCHA not ready yet');
+        return false;
+      }
 
+      // 1. Get the token from Google
+      const token = await window.grecaptcha.enterprise.execute(
+        process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!,
+        { action: actionName }
+      );
+
+      // 2. Verify token on your backend
+      const res = await fetch('/api/verify-captcha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action: actionName }),
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        console.error('Captcha Failed:', data.reasons);
+        return false;
+      }
+
+      return true; // Score was >= 0.5
+    } catch (err) {
+      console.error('Verification error:', err);
+      return false;
+    }
+  };
+
+  /* ============================================================
+      PDF + DOCX Extractors
+     ============================================================ */
+  const extractTextFromPDF = async (file: File) => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map((item: any) => ('str' in item ? item.str : '')).join(' ');
-      fullText += pageText + '\n';
+      fullText += content.items.map((i: any) => i.str).join(' ') + '\n';
     }
-
     return fullText;
   };
 
-  const extractTextFromDocx = async (file: File): Promise<string> => {
+  const extractTextFromDocx = async (file: File) => {
     const arrayBuffer = await file.arrayBuffer();
     const result = await mammoth.extractRawText({ arrayBuffer });
     return result.value;
@@ -176,40 +149,37 @@ export default function AnalyzerPage() {
       }
 
       setResumeText(text);
-
-      // 3. Run Static Analysis
-      const result = analyzeResume(text);
+      const result = await analyzeResume(text);
       setAnalysis(result);
-      setAIFeedback(null);
     } catch (err: any) {
-      console.error('Error in handleFileSelect:', err);
-      setError(err.message || 'Failed to analyze resume.');
+      console.error(err);
+      setError(err.message || 'Failed to process file.');
     } finally {
       setLoading(false);
     }
   };
 
   /* ============================================================
-      Analyze Button for Pasted Text
+      Paste Text Handler
      ============================================================ */
-  const handleAnalyzeText = async () => {
+  const handleTextAnalyze = async () => {
     if (!resumeText.trim()) {
-      setError('Please paste resume text before analyzing.');
+      setError('Please enter or paste resume text.');
       return;
     }
 
     setLoading(true);
     setError(null);
-    setFileName(null);
-    setAIFeedback(null);
 
     try {
-      const isHuman = await verifyAction('resume_analyze');
+      // 1. Verify User is Human
+      const isHuman = await verifyAction('text_analyze');
       if (!isHuman) {
-        throw new Error('Security check failed. Please refresh and try again.');
+        throw new Error('Security check failed.');
       }
 
-      const result = analyzeResume(resumeText);
+      // 2. Analyze
+      const result = await analyzeResume(resumeText);
       setAnalysis(result);
     } catch (err: any) {
       setError(err.message || 'Failed to analyze resume.');
@@ -253,14 +223,7 @@ export default function AnalyzerPage() {
       if (!response.ok) throw new Error('AI analysis failed.');
 
       const data = await response.json();
-
-      // Normalize backend → frontend shape
-      setAIFeedback({
-        summary: data.summaryCritique,
-        bulletSuggestions: data.bulletSuggestions,
-        improvedSummary: data.rewrittenSummary,
-      });
-
+      setAIFeedback(data);
       recordRequest();
     } catch (err: any) {
       setError(err.message || 'AI Review failed.');
@@ -276,7 +239,8 @@ export default function AnalyzerPage() {
       UI Rendering
      ============================================================ */
   return (
-    <Box sx={{ minHeight: '100vh', py: 4 }}>
+    <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 4 }}>
+      
       {/* Load reCAPTCHA Enterprise Script */}
       <Script
         src={`https://www.google.com/recaptcha/enterprise.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
@@ -302,7 +266,7 @@ export default function AnalyzerPage() {
 
         <Grid container spacing={3}>
           {/* LEFT COLUMN */}
-          <Grid xs={12} lg={5}>
+          <Grid item xs={12} lg={5}>
             <Paper sx={{ p: 3, mb: 3 }}>
               <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
                 <Tab label="Upload File" />
@@ -320,48 +284,44 @@ export default function AnalyzerPage() {
                     value={resumeText}
                     onChange={(e) => setResumeText(e.target.value)}
                     label="Paste resume text"
-                    placeholder="Copy and paste your resume content here..."
-                    variant="outlined"
-                    sx={{ mb: 2 }}
                   />
                   <Button
                     variant="contained"
-                    color="primary"
                     fullWidth
-                    onClick={handleAnalyzeText}
-                    disabled={loading}
+                    sx={{ mt: 2 }}
+                    disabled={loading || !resumeText.trim()}
+                    onClick={handleTextAnalyze}
                     startIcon={loading ? <CircularProgress size={20} /> : <AnalyticsIcon />}
                   >
-                    {loading ? 'Analyzing…' : 'Analyze Text'}
+                    {loading ? 'Analyzing…' : 'Analyze Resume'}
                   </Button>
                 </>
               )}
             </Paper>
 
-            {/* AI REVIEW CARD */}
+            {/* AI REVIEW */}
             {analysis && (
               <Paper sx={{ p: 3 }}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                  <Typography variant="h6" fontWeight={600}>
-                    AI-Powered Review
+                <Typography variant="h6">AI-Powered Review</Typography>
+                <Typography variant="body2" color="text.secondary" mb={2}>
+                  Get deeper, AI-driven suggestions and improvements.
+                </Typography>
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {remainingRequests} requests remaining today
                   </Typography>
-                  <Box textAlign="right">
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Requests remaining today: {remainingRequests}
+                  {timeUntilNext > 0 && (
+                    <Typography variant="caption" color="text.secondary">
+                      Next in {timeUntilNext}s
                     </Typography>
-                    {timeUntilNext > 0 && (
-                      <Typography variant="caption" color="text.secondary">
-                        Next in {Math.ceil(timeUntilNext)}s
-                      </Typography>
-                    )}
-                  </Box>
+                  )}
                 </Box>
 
                 <Button
                   variant="contained"
-                  color="secondary"
                   fullWidth
-                  disabled={aiLoading || remainingRequests <= 0 || timeUntilNext > 0}
+                  disabled={aiLoading || timeUntilNext > 0}
                   onClick={handleAIReview}
                   startIcon={aiLoading ? <CircularProgress size={20} /> : <AIIcon />}
                 >
@@ -385,19 +345,22 @@ export default function AnalyzerPage() {
           </Grid>
 
           {/* RIGHT COLUMN */}
-          <Grid xs={12} lg={7}>
-            {loading && (
-              <Box display="flex" justifyContent="center" alignItems="center" height="100%">
-                <CircularProgress />
-              </Box>
+          <Grid item xs={12} lg={7}>
+             {!analysis && !loading && (
+              <Paper sx={{ p: 8, textAlign: 'center' }}>
+                <AnalyticsIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                <Typography variant="h6" color="text.secondary">
+                  Upload or paste to begin
+                </Typography>
+              </Paper>
             )}
-
-            {!loading && analysis && (
+            {/* ... (Rest of UI components) */}
+            {analysis && !loading && (
               <Grid container spacing={3}>
-                <Grid xs={12} lg={7}>
+                <Grid item xs={12} lg={7}>
                   <AnalysisResults analysis={analysis} />
                 </Grid>
-                <Grid xs={12} lg={5}>
+                <Grid item xs={12} lg={5}>
                   <SuggestionsSidebar suggestions={analysis.suggestions} />
                 </Grid>
               </Grid>
