@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
 // --------------------------------------
-// Runtime (force Node.js just in case) 
+// Runtime (force Node.js runtime)
 // --------------------------------------
 export const runtime = "nodejs";
 
 // --------------------------------------
-// ENV + CONSTANTS
+// OpenAI client
 // --------------------------------------
 let openai: OpenAI | null = null;
 
@@ -20,39 +20,53 @@ function getOpenAI() {
   return openai;
 }
 
-// GPT-5-mini (MUST NOT use json_object mode)
 const MODEL = process.env.AI_MODEL || "gpt-5-mini";
 
-// Rate limiter (in-memory)
-const rateStore = new Map();
-const MAX_PER_DAY = Number(process.env.RATE_LIMIT_MAX_PER_DAY || 5);
-const COOLDOWN_SECONDS = Number(process.env.RATE_LIMIT_COOLDOWN_SECONDS || 30);
+// --------------------------------------
+// Rate limiting
+// --------------------------------------
+type RateLimitEntry = {
+  count: number;
+  lastTimestamp: number;
+  dayStart: number;
+};
 
-// --------------------------------------
-// Helpers
-// --------------------------------------
-function getClientIp(req: Request) {
+type RateLimitResult =
+  | { ok: true; entry: RateLimitEntry }
+  | { ok: false; type: "cooldown"; remaining: number }
+  | { ok: false; type: "daily_limit" };
+
+const rateStore = new Map<string, RateLimitEntry>();
+
+const MAX_PER_DAY = Number(process.env.RATE_LIMIT_MAX_PER_DAY || 5);
+const COOLDOWN_SECONDS = Number(
+  process.env.RATE_LIMIT_COOLDOWN_SECONDS || 30
+);
+
+function getClientIp(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
   if (!fwd) return "unknown";
   return fwd.split(",")[0].trim();
 }
 
-function checkServerRateLimit(ip: string) {
+function checkServerRateLimit(ip: string): RateLimitResult {
   const now = Date.now();
-  const entry = rateStore.get(ip) || {
-    count: 0,
-    lastTimestamp: 0,
-    dayStart: now,
-  };
+  const existing =
+    rateStore.get(ip) ||
+    ({
+      count: 0,
+      lastTimestamp: 0,
+      dayStart: now,
+    } as RateLimitEntry);
 
-  // Reset daily usage
-  if (now - entry.dayStart > 24 * 60 * 60 * 1000) {
-    entry.count = 0;
-    entry.dayStart = now;
+  // Reset daily window if more than 24h passed
+  if (now - existing.dayStart > 24 * 60 * 60 * 1000) {
+    existing.count = 0;
+    existing.dayStart = now;
   }
 
-  // Cooldown enforcement
-  const secondsSinceLast = (now - entry.lastTimestamp) / 1000;
+  const secondsSinceLast = (now - existing.lastTimestamp) / 1000;
+
   if (secondsSinceLast < COOLDOWN_SECONDS) {
     return {
       ok: false,
@@ -61,12 +75,11 @@ function checkServerRateLimit(ip: string) {
     };
   }
 
-  // Daily max enforcement
-  if (entry.count >= MAX_PER_DAY) {
+  if (existing.count >= MAX_PER_DAY) {
     return { ok: false, type: "daily_limit" };
   }
 
-  return { ok: true, entry };
+  return { ok: true, entry: existing };
 }
 
 // --------------------------------------
@@ -74,45 +87,57 @@ function checkServerRateLimit(ip: string) {
 // --------------------------------------
 function normalizeBullets(text: string): string {
   return text
-    // Convert common bullet characters to "-"
     .replace(/^[\u2022\u25E6\u25AA\u2023\u2043●▪•]+/gm, "- ")
-    // Lines starting with • or similar that PDF.js turns into odd symbols
     .replace(/^\s*[•●▪]/gm, "- ")
-    // Replace leading hyphen/dash bullets
     .replace(/^\s*[-–—]\s*/gm, "- ")
-    // If line starts with a strong action verb, treat it as a bullet
     .replace(
       /^\s*(Implemented|Led|Managed|Created|Developed|Built|Designed|Refactored|Enhanced|Optimized|Architected|Spearheaded|Coordinated|Maintained|Improved|Increased|Reduced|Collaborated|Solved|Trained|Mentored|Automated)\b/gm,
       "- $1"
     )
-    // Remove duplicate bullets ("- - ")
     .replace(/^- -/gm, "- ")
-    // Ensure each bullet is its own line
     .replace(/-\s+/g, "- ")
     .trim();
 }
 
+// --------------------------------------
+// Responses API type guard
+// --------------------------------------
+type TextBlock = {
+  type: "output_text";
+  content: { type: string; text: string }[];
+};
+
+function isTextBlock(item: any): item is TextBlock {
+  return (
+    item &&
+    typeof item === "object" &&
+    item.type === "output_text" &&
+    Array.isArray(item.content) &&
+    item.content.length > 0 &&
+    typeof item.content[0]?.text === "string"
+  );
+}
 
 // --------------------------------------
-// POST — Resume Analysis
+// POST handler
 // --------------------------------------
 export async function POST(req: Request) {
   try {
     const ip = getClientIp(req);
 
-    // Parse incoming JSON
-    let body;
+    // Parse JSON body safely
+    let body: any;
     try {
       body = await req.json();
-    } catch (err) {
+    } catch {
       return NextResponse.json(
         { error: "Invalid JSON body" },
         { status: 400 }
       );
     }
 
-    const { resumeText } = body;
-    const cleanedResume = normalizeBullets(resumeText);
+    const { resumeText } = body ?? {};
+    const cleanedResume = normalizeBullets(resumeText || "");
 
     if (!resumeText || resumeText.trim().length < 30) {
       return NextResponse.json(
@@ -121,8 +146,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // Rate limit
+    // Rate limit checks
     const rl = checkServerRateLimit(ip);
+
     if (!rl.ok) {
       if (rl.type === "cooldown") {
         return NextResponse.json(
@@ -138,9 +164,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // --------------------------------------
     // Build prompt
-    // --------------------------------------
     const prompt = `
 You are an expert résumé editor. You are analyzing résumé text extracted from a PDF, which may contain OCR or text-extraction artifacts such as:
 - Incorrect spacing inside words (e.g., "profi cien t", "engi neer")
@@ -163,79 +187,58 @@ Résumé text:
 ${cleanedResume}
 `;
 
-
-
-    // --------------------------------------
-    // Call OpenAI Responses API (GPT-5-mini)
-    // ❗ NO json_object mode allowed
-    // --------------------------------------
-    const aiResult = await getOpenAI().responses.create({
+    // Call OpenAI Responses API
+    const client = getOpenAI();
+    const aiResult = await client.responses.create({
       model: MODEL,
       input: prompt,
-      // NO response_format here — gpt-5-mini does not support it
     });
 
-    // GPT-5-mini always returns output_text directly
-    const outputText = aiResult.output_text;
+    // Extract first output block; type as any to dodge SDK union friction,
+    // then validate with our own runtime guard.
+    const rawItem: any = (aiResult as any).output?.[0];
 
-    if (!outputText || typeof outputText !== "string") {
-      console.error("AI ERROR: Missing or invalid output_text", aiResult);
+    if (!isTextBlock(rawItem)) {
+      console.error(
+        "AI ERROR: Unexpected output block:",
+        JSON.stringify(rawItem, null, 2)
+      );
       return NextResponse.json(
-        { error: "AI returned an empty or invalid response." },
+        { error: "AI returned an unexpected output format." },
         { status: 500 }
       );
     }
 
+    const textBlock: TextBlock = rawItem;
+    const outputText = textBlock.content[0].text;
 
-    // --------------------------------------
-    // Attempt to parse JSON
-    // GPT-5-mini may include extra whitespace or prose
-    // --------------------------------------
-    let parsed;
+    // Parse JSON produced by the model
+    let parsed: any;
     try {
-      // Try raw parse first
       parsed = JSON.parse(outputText);
-    } catch (err) {
-      // Try to extract final JSON from the text (if model added commentary)
+    } catch {
       const jsonMatch = outputText.match(/\{[\s\S]*\}$/);
       if (!jsonMatch) {
         console.error("JSON PARSE FAIL:", outputText);
         return NextResponse.json(
           {
-            error:
-              "AI output was not valid JSON. Try using GPT-5.1 for structured output.",
+            error: "AI output was not valid JSON.",
             raw: outputText,
           },
           { status: 500 }
         );
       }
-
-      try {
-        parsed = JSON.parse(jsonMatch[0]);
-      } catch (err2) {
-        console.error("JSON PARSE FAIL 2:", outputText);
-        return NextResponse.json(
-          {
-            error:
-              "Failed to parse AI JSON output. GPT-5-mini may require switching to GPT-5.1.",
-            raw: outputText,
-          },
-          { status: 500 }
-        );
-      }
+      parsed = JSON.parse(jsonMatch[0]);
     }
 
-    // --------------------------------------
-    // Save rate usage
-    // --------------------------------------
-    const { entry } = rl;
-    entry.count++;
-    entry.lastTimestamp = Date.now();
-    rateStore.set(ip, entry);
+    // Update rate limiting entry (we know rl.ok === true here)
+    if (rl.ok) {
+      const entry = rl.entry;
+      entry.count += 1;
+      entry.lastTimestamp = Date.now();
+      rateStore.set(ip, entry);
+    }
 
-    // --------------------------------------
-    // Return response to UI
-    // --------------------------------------
     return NextResponse.json(
       {
         ok: true,
@@ -245,8 +248,11 @@ ${cleanedResume}
       },
       { status: 200 }
     );
-  } catch (err: any) {
-    console.error("UNEXPECTED AI ROUTE ERROR:", JSON.stringify(err, null, 2));
+  } catch (err) {
+    console.error(
+      "UNEXPECTED AI ROUTE ERROR:",
+      typeof err === "string" ? err : JSON.stringify(err, null, 2)
+    );
     return NextResponse.json(
       { error: "Failed to analyze resume." },
       { status: 500 }

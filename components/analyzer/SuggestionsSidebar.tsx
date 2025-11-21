@@ -1,6 +1,6 @@
-'use client';
+'use client'
 
-import React from 'react';
+import React from 'react'
 import {
   Box,
   Typography,
@@ -9,47 +9,49 @@ import {
   AlertTitle,
   Chip,
   Divider,
-} from '@mui/material';
+} from '@mui/material'
 import {
   Error as ErrorIcon,
   Warning as WarningIcon,
   Info as InfoIcon,
   CheckCircle as SuccessIcon,
-} from '@mui/icons-material';
-import { Suggestion } from '@/lib/analyzer';
+} from '@mui/icons-material'
+import type { Suggestion } from '@/lib/analyzer'
 
 interface SuggestionsSidebarProps {
-  suggestions: Suggestion[];
+  suggestions: Suggestion[]
 }
 
-export default function SuggestionsSidebar({ suggestions }: SuggestionsSidebarProps) {
+export default function SuggestionsSidebar({
+  suggestions,
+}: SuggestionsSidebarProps) {
   const getSeverityIcon = (type: Suggestion['type']) => {
     switch (type) {
       case 'error':
-        return <ErrorIcon />;
+        return <ErrorIcon />
       case 'warning':
-        return <WarningIcon />;
+        return <WarningIcon />
       case 'success':
-        return <SuccessIcon />;
+        return <SuccessIcon />
       default:
-        return <InfoIcon />;
+        return <InfoIcon />
     }
-  };
+  }
 
   const getCategoryColor = (category: Suggestion['category']) => {
     switch (category) {
       case 'structure':
-        return 'primary';
+        return 'primary'
       case 'content':
-        return 'secondary';
+        return 'secondary'
       case 'formatting':
-        return 'info';
+        return 'info'
       case 'keywords':
-        return 'success';
+        return 'success'
       default:
-        return 'default';
+        return 'default'
     }
-  };
+  }
 
   if (suggestions.length === 0) {
     return (
@@ -59,7 +61,7 @@ export default function SuggestionsSidebar({ suggestions }: SuggestionsSidebarPr
           No major issues found. Your resume looks good!
         </Alert>
       </Paper>
-    );
+    )
   }
 
   return (
@@ -74,7 +76,7 @@ export default function SuggestionsSidebar({ suggestions }: SuggestionsSidebarPr
       <Divider sx={{ my: 2 }} />
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {suggestions.map((suggestion) => (
+        {suggestions.map(suggestion => (
           <Alert
             key={suggestion.id}
             severity={suggestion.type}
@@ -86,16 +88,29 @@ export default function SuggestionsSidebar({ suggestions }: SuggestionsSidebarPr
             }}
           >
             <Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
-                <AlertTitle sx={{ mb: 0.5 }}>{suggestion.title}</AlertTitle>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  mb: 0.5,
+                }}
+              >
+                <AlertTitle sx={{ mb: 0.5 }}>
+                  {suggestion.title}
+                </AlertTitle>
                 <Chip
                   label={suggestion.category}
                   size="small"
-                  color={getCategoryColor(suggestion.category) as any}
+                  color={getCategoryColor(
+                    suggestion.category
+                  ) as any}
                   sx={{ ml: 1 }}
                 />
               </Box>
-              <Typography variant="body2">{suggestion.description}</Typography>
+              <Typography variant="body2">
+                {suggestion.description}
+              </Typography>
             </Box>
           </Alert>
         ))}
@@ -103,9 +118,10 @@ export default function SuggestionsSidebar({ suggestions }: SuggestionsSidebarPr
 
       <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
         <Typography variant="caption" color="text.secondary">
-          💡 Tip: Focus on high-priority suggestions first for the biggest impact.
+          💡 Tip: Focus on high-priority suggestions first for the biggest
+          impact.
         </Typography>
       </Box>
     </Paper>
-  );
+  )
 }

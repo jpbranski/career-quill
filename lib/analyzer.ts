@@ -1,85 +1,68 @@
 'use server'
 // ================================================
-// Resume Analyzer (Improved)
-// Reads action verbs from /data/ACTION_VERBS.txt
+// Resume Analyzer (Improved, FS-free)
 // ================================================
 
-import fs from "fs";
-import path from "path";
+import actionVerbsRaw from '@/data/ACTION_VERBS.json'
 
-// ==================================================
-// 1. LOAD ACTION VERBS FROM TXT FILE
-// Supports comma-separated or newline-separated lists
-// ==================================================
-let ACTION_VERB_CACHE: string[] | null = null;
-
-function loadActionVerbs(): string[] {
-  if (ACTION_VERB_CACHE) return ACTION_VERB_CACHE;
-
-  try {
-    const filePath = path.join(process.cwd(), "data", "ACTION_VERBS.txt");
-    const content = fs.readFileSync(filePath, "utf8");
-
-    ACTION_VERB_CACHE = content
-      .split(/[\n,]+/)         // split on comma OR newline
-      .map((v) => v.trim().toLowerCase())
-      .filter((v) => v.length > 0);
-
-    return ACTION_VERB_CACHE;
-  } catch (err) {
-    console.error("Failed to load ACTION_VERBS.txt:", err);
-    ACTION_VERB_CACHE = [];
-    return ACTION_VERB_CACHE;
-  }
-}
-
-const ACTION_VERBS = loadActionVerbs();
+// Normalize verbs list
+const ACTION_VERBS: string[] = (actionVerbsRaw as string[])
+  .map(v => v.trim().toLowerCase())
+  .filter(v => v.length > 0)
 
 // ==================================================
 // 2. REGEX + HELPERS
 // ==================================================
 
 // Universal bullet detection (handles hyphens + unicode bullets)
-const BULLET_REGEX = /^\s*(?:[-‐-–—•●▪▫◦‣⁃*]+\s+)(.+)$/;
+const BULLET_REGEX = /^\s*(?:[-‐-–—•●▪▫◦‣⁃*]+\s+)(.+)$/
+
+// Treat “Implemented…, Led…, Managed…” lines as bullets
+const LEADING_VERB_BULLET_REGEX =
+  /^\s*(Implemented|Led|Managed|Created|Developed|Built|Designed|Refactored|Enhanced|Optimized|Architected|Spearheaded|Coordinated|Maintained|Improved|Increased|Reduced|Collaborated|Solved|Trained|Mentored|Automated)\b/i
 
 // PDF spacing cleanup (fixes "pro fi cien t" → "proficient")
 function fixOcrSpacing(text: string) {
-  return text.replace(/([a-z])\s+([a-z])/gi, "$1$2");
+  return text.replace(/([a-z])\s+([a-z])/gi, '$1$2')
 }
 
 // Quantifier detection ($5k, 42%, 12+, 300M, etc.)
-const QUANTIFIER_REGEX = /\b(\$?\d+[%kKmM]?|\d+%|\d+\+)\b/g;
+const QUANTIFIER_REGEX = /\b(\$?\d+[%kKmM]?|\d+%|\d+\+)\b/
 
 // ==================================================
 // 3. BULLET EXTRACTION + RECONSTRUCTION
 // ==================================================
 
 function extractBullets(lines: string[]): string[] {
-  const bullets: string[] = [];
-  let buffer = "";
+  const bullets: string[] = []
+  let buffer = ''
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
-    const match = line.match(BULLET_REGEX);
+    const line = rawLine.trim()
+    const bulletMatch = line.match(BULLET_REGEX)
+    const verbAsBullet = !bulletMatch && LEADING_VERB_BULLET_REGEX.test(line)
 
-    if (match) {
+    if (bulletMatch || verbAsBullet) {
       // Flush previous bullet
-      if (buffer) bullets.push(buffer.trim());
-      buffer = match[1].trim();
-    } else if (buffer && /^[A-Za-z0-9]/.test(line)) {
+      if (buffer) bullets.push(buffer.trim())
+      buffer = bulletMatch ? bulletMatch[1].trim() : line
+      continue
+    }
+
+    if (buffer && /^[A-Za-z0-9]/.test(line)) {
       // Continuation line (PDF-wrapped bullet)
-      buffer += " " + line;
+      buffer += ' ' + line
     } else {
       // Neither bullet nor continuation
       if (buffer) {
-        bullets.push(buffer.trim());
-        buffer = "";
+        bullets.push(buffer.trim())
+        buffer = ''
       }
     }
   }
 
-  if (buffer) bullets.push(buffer.trim());
-  return bullets;
+  if (buffer) bullets.push(buffer.trim())
+  return bullets
 }
 
 // ==================================================
@@ -87,16 +70,26 @@ function extractBullets(lines: string[]): string[] {
 // ==================================================
 
 function countActionVerbs(bullets: string[]): number {
-  let count = 0;
+  let count = 0
   for (const b of bullets) {
-    const firstWord = b.split(/\s+/)[0].toLowerCase();
-    if (ACTION_VERBS.includes(firstWord)) count++;
+    const words = b
+      .toLowerCase()
+      .split(/[^a-z]+/i)
+      .filter(Boolean)
+
+    if (words.some(w => ACTION_VERBS.includes(w))) {
+      count++
+    }
   }
-  return count;
+  return count
 }
 
 function countQuantifiedBullets(bullets: string[]): number {
-  return bullets.filter((b) => QUANTIFIER_REGEX.test(b)).length;
+  let count = 0
+  for (const b of bullets) {
+    if (QUANTIFIER_REGEX.test(b)) count++
+  }
+  return count
 }
 
 // ==================================================
@@ -110,7 +103,7 @@ function detectSections(text: string) {
     hasExperience: /experience|employment|work history/i.test(text),
     hasEducation: /education|academic|degree/i.test(text),
     hasSkills: /skills|technologies|competencies/i.test(text),
-  };
+  }
 }
 
 // ==================================================
@@ -118,37 +111,37 @@ function detectSections(text: string) {
 // ==================================================
 
 function calculateScore(metrics: any, wordCount: number): number {
-  let score = 0;
+  let score = 0
 
   // Structure (40 pts)
-  if (metrics.hasContactInfo) score += 10;
-  if (metrics.hasSummary) score += 5;
-  if (metrics.hasExperience) score += 15;
-  if (metrics.hasEducation) score += 5;
-  if (metrics.hasSkills) score += 5;
+  if (metrics.hasContactInfo) score += 10
+  if (metrics.hasSummary) score += 5
+  if (metrics.hasExperience) score += 15
+  if (metrics.hasEducation) score += 5
+  if (metrics.hasSkills) score += 5
 
   // Content (40 pts)
   const actionRatio =
     metrics.bulletCount > 0
       ? metrics.actionVerbCount / metrics.bulletCount
-      : 0;
+      : 0
 
-  score += actionRatio * 20;
+  score += actionRatio * 20
 
   const quantRatio =
     metrics.bulletCount > 0
       ? metrics.quantifiedBullets / metrics.bulletCount
-      : 0;
+      : 0
 
-  score += quantRatio * 20;
+  score += quantRatio * 20
 
   // Formatting (20 pts)
-  if (metrics.bulletCount >= 3) score += 5;
-  if (metrics.longParagraphs === 0) score += 5;
-  if (metrics.dateConsistency) score += 5;
-  if (wordCount >= 300 && wordCount <= 600) score += 5;
+  if (metrics.bulletCount >= 3) score += 5
+  if (metrics.longParagraphs === 0) score += 5
+  if (metrics.dateConsistency) score += 5
+  if (wordCount >= 300 && wordCount <= 600) score += 5
 
-  return Math.round(Math.min(100, score));
+  return Math.round(Math.min(100, score))
 }
 
 // ==================================================
@@ -156,87 +149,217 @@ function calculateScore(metrics: any, wordCount: number): number {
 // ==================================================
 
 export interface Suggestion {
-  id: string;
-  type: 'error' | 'warning' | 'info' | 'success';
-  title: string;
-  description: string;
-  category: 'structure' | 'content' | 'formatting' | 'keywords';
+  id: string
+  type: 'error' | 'warning' | 'info' | 'success'
+  title: string
+  description: string
+  category: 'structure' | 'content' | 'formatting' | 'keywords'
 }
 
 export interface AnalysisResult {
-  score: number;
-  wordCount: number;
-  readingTimeMinutes: number;
-  suggestions: Suggestion[];
+  score: number
+  wordCount: number
+  readingTimeMinutes: number
+  suggestions: Suggestion[]
   metrics: {
-    hasContactInfo: boolean;
-    hasSummary: boolean;
-    hasExperience: boolean;
-    hasEducation: boolean;
-    hasSkills: boolean;
-    bulletCount: number;
-    actionVerbCount: number;
-    quantifiedBullets: number;
-    paragraphCount: number;
-    longParagraphs: number;
-    averageBulletLength: number;
-    dateConsistency: boolean;
-  };
+    hasContactInfo: boolean
+    hasSummary: boolean
+    hasExperience: boolean
+    hasEducation: boolean
+    hasSkills: boolean
+    bulletCount: number
+    actionVerbCount: number
+    quantifiedBullets: number
+    paragraphCount: number
+    longParagraphs: number
+    averageBulletLength: number
+    dateConsistency: boolean
+  }
 }
 
 // ==================================================
-// 8. MAIN ANALYZER ENTRY POINT
+// 8. SUGGESTION GENERATOR
+// ==================================================
+
+function buildSuggestions(
+  metrics: AnalysisResult['metrics'],
+  wordCount: number,
+  score: number
+): Suggestion[] {
+  const suggestions: Suggestion[] = []
+
+  if (!metrics.hasSummary) {
+    suggestions.push({
+      id: 'add-summary',
+      type: 'warning',
+      title: 'Add a concise professional summary',
+      description:
+        'Open your resume with a 2–3 sentence summary that highlights your role, years of experience, and key strengths.',
+      category: 'structure',
+    })
+  }
+
+  if (!metrics.hasSkills) {
+    suggestions.push({
+      id: 'add-skills',
+      type: 'warning',
+      title: 'Include a clear skills section',
+      description:
+        'Add a dedicated skills section that groups tools, technologies, and core competencies in a scannable list.',
+      category: 'structure',
+    })
+  }
+
+  if (!metrics.hasExperience) {
+    suggestions.push({
+      id: 'add-experience',
+      type: 'error',
+      title: 'Highlight your work experience',
+      description:
+        'Recruiters expect a work experience section with role titles, employers, dates, and impact-focused bullet points.',
+      category: 'structure',
+    })
+  }
+
+  if (metrics.bulletCount === 0) {
+    suggestions.push({
+      id: 'no-bullets',
+      type: 'error',
+      title: 'Add bullet points for impact',
+      description:
+        'Use bullet points under each role to describe your achievements. Start with strong verbs and focus on measurable outcomes.',
+      category: 'content',
+    })
+  } else {
+    const actionRatio =
+      metrics.actionVerbCount / Math.max(1, metrics.bulletCount)
+    const quantRatio =
+      metrics.quantifiedBullets / Math.max(1, metrics.bulletCount)
+
+    if (actionRatio < 0.6) {
+      suggestions.push({
+        id: 'more-action-verbs',
+        type: 'warning',
+        title: 'Strengthen bullets with action verbs',
+        description:
+          'Start each bullet with a strong action verb such as “Led”, “Implemented”, “Optimized”, or “Designed” to emphasize your ownership.',
+        category: 'keywords',
+      })
+    }
+
+    if (quantRatio < 0.3) {
+      suggestions.push({
+        id: 'more-quantification',
+        type: 'warning',
+        title: 'Quantify more of your achievements',
+        description:
+          'Whenever possible, include numbers (%, $, counts, time saved) to show scale and impact, e.g., “Reduced processing time by 35%”.',
+        category: 'content',
+      })
+    }
+  }
+
+  if (metrics.longParagraphs > 0) {
+    suggestions.push({
+      id: 'break-up-paragraphs',
+      type: 'info',
+      title: 'Break up dense paragraphs',
+      description:
+        'Long blocks of text are hard to scan. Convert long paragraphs into 2–3 bullets that each focus on a single achievement.',
+      category: 'formatting',
+    })
+  }
+
+  if (!metrics.dateConsistency) {
+    suggestions.push({
+      id: 'date-consistency',
+      type: 'info',
+      title: 'Use a consistent date format',
+      description:
+        'Pick one date format (e.g., “Jan 2022 – Present”) and use it consistently across all roles and sections.',
+      category: 'formatting',
+    })
+  }
+
+  if (wordCount < 250 || wordCount > 800) {
+    suggestions.push({
+      id: 'length-balance',
+      type: 'info',
+      title: 'Adjust overall resume length',
+      description:
+        'Aim for roughly 300–600 words on a one-page resume so that it feels substantial but still easy to scan quickly.',
+      category: 'structure',
+    })
+  }
+
+  // If score is very low and we somehow still have few suggestions,
+  // add a generic “overall improvements” item.
+  if (score < 60 && suggestions.length < 3) {
+    suggestions.push({
+      id: 'overall-strength',
+      type: 'warning',
+      title: 'Overall resume strength can be improved',
+      description:
+        'Focus on adding more impact-focused bullets, quantifying results, and tightening wording to raise your overall score.',
+      category: 'content',
+    })
+  }
+
+  return suggestions
+}
+
+// ==================================================
+// 9. MAIN ANALYZER ENTRY POINT
 // ==================================================
 
 export async function analyzeResume(text: string): Promise<AnalysisResult> {
   // Fix PDF OCR weirdness
-  const cleaned = fixOcrSpacing(text);
+  const cleaned = fixOcrSpacing(text)
 
   const lines = cleaned
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
 
-  const words = cleaned.split(/\s+/).filter((w) => w);
-  const wordCount = words.length;
-  const readingTimeMinutes = Math.ceil(wordCount / 200);
+  const words = cleaned.split(/\s+/).filter(w => w)
+  const wordCount = words.length
+  const readingTimeMinutes = Math.ceil(wordCount / 200)
 
   // Bullets
-  const bullets = extractBullets(lines);
-  const bulletCount = bullets.length;
+  const bullets = extractBullets(lines)
+  const bulletCount = bullets.length
 
   // Action verbs
-  const actionVerbCount = countActionVerbs(bullets);
+  const actionVerbCount = countActionVerbs(bullets)
 
   // Quantifiers
-  const quantifiedBullets = countQuantifiedBullets(bullets);
+  const quantifiedBullets = countQuantifiedBullets(bullets)
 
   // Paragraphs
   const paragraphs = cleaned
     .split(/\n\s*\n/)
-    .filter((p) => p.trim().length > 0);
+    .filter(p => p.trim().length > 0)
 
   const longParagraphs = paragraphs.filter(
-    (p) => p.split(/\n/).length > 4
-  ).length;
+    p => p.split(/\n/).length > 4
+  ).length
 
   // Sections
-  const sections = detectSections(cleaned);
+  const sections = detectSections(cleaned)
 
   // Average bullet length
   const averageBulletLength =
     bulletCount > 0
       ? bullets.reduce((s, b) => s + b.length, 0) / bulletCount
-      : 0;
+      : 0
 
   // Date consistency check
-  const datePatterns = [
-    /\d{2}\/\d{4}/g,
-    /\w{3}\s+\d{4}/g,
-    /\d{4}-\d{2}/g,
-  ];
-  const dateCounts = datePatterns.map((p) => cleaned.match(p)?.length || 0);
-  const dateConsistency = dateCounts.filter((c) => c > 0).length <= 1;
+  const datePatterns = [/\d{2}\/\d{4}/g, /\w{3}\s+\d{4}/g, /\d{4}-\d{2}/g]
+  const dateCounts = datePatterns.map(
+    p => cleaned.match(p)?.length || 0
+  )
+  const dateConsistency =
+    dateCounts.filter(c => c > 0).length <= 1
 
   // Build metrics object
   const metrics = {
@@ -248,16 +371,19 @@ export async function analyzeResume(text: string): Promise<AnalysisResult> {
     longParagraphs,
     averageBulletLength,
     dateConsistency,
-  };
+  }
 
   // Generate score
-  const score = calculateScore(metrics, wordCount);
+  const score = calculateScore(metrics, wordCount)
+
+  // Generate suggestions based on metrics + score
+  const suggestions = buildSuggestions(metrics, wordCount, score)
 
   return {
     score,
     wordCount,
     readingTimeMinutes,
-    suggestions: [], // Add later if needed
+    suggestions,
     metrics,
-  };
+  }
 }
