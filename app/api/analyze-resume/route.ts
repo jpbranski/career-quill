@@ -17,7 +17,7 @@ function getClient() {
   return client;
 }
 
-const MODEL = process.env.AI_MODEL || "gpt-4.1-mini";
+const MODEL = process.env.OPENAI_MODEL || "gpt-5-mini";
 
 // ----------------------------------------------------
 // Bullet normalization
