@@ -1,244 +1,220 @@
-import { NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
-export const runtime = 'nodejs'
+export const runtime = "nodejs";
 
-// ================================================================
-// OpenAI client
-// ================================================================
-let client: OpenAI | null = null
+// ----------------------------------------------------
+// OpenAI Client
+// ----------------------------------------------------
+let client: OpenAI | null = null;
 
 function getClient() {
   if (!client) {
     client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    })
+      apiKey: process.env.OPENAI_API_KEY!,
+    });
   }
-  return client
+  return client;
 }
 
-const MODEL = process.env.AI_MODEL || 'gpt-5-mini'
+const MODEL = process.env.AI_MODEL || "gpt-4.1-mini";
 
-// ================================================================
-// Universal extractor for Responses API output (text + JSON)
-// ================================================================
-function extractTextAndJSON(aiResult: any): { raw: string; json: any | null } {
-  if (!aiResult) return { raw: '', json: null }
-
-  let rawText = ''
-
-  // 1. Standard Responses API: aiResult.output[]
-  if (Array.isArray(aiResult.output)) {
-    for (const block of aiResult.output) {
-      // output_text blocks
-      if (block?.type === 'output_text' && Array.isArray(block.content)) {
-        for (const c of block.content) {
-          if (typeof c?.text === 'string') rawText += c.text + '\n'
-        }
-      }
-
-      // message-style blocks
-      if (block?.type === 'message' && Array.isArray(block.content)) {
-        for (const c of block.content) {
-          if (typeof c?.text === 'string') rawText += c.text + '\n'
-        }
-      }
-
-      // generic text field on block
-      if (typeof block?.text === 'string') {
-        rawText += block.text + '\n'
-      }
-    }
-  }
-
-  // 2. Fallback shapes (some SDKs/models)
-  if (!rawText && typeof aiResult.output_text === 'string') {
-    rawText = aiResult.output_text
-  }
-
-  if (!rawText) {
-    const maybe =
-      aiResult?.text ??
-      aiResult?.message ??
-      aiResult?.content ??
-      aiResult?.response
-    if (typeof maybe === 'string') rawText = maybe
-  }
-
-  rawText = rawText.trim()
-
-  // 3. Try to parse JSON
-  let parsed: any = null
-  if (rawText) {
-    try {
-      parsed = JSON.parse(rawText)
-    } catch {
-      const jsonMatch = rawText.match(/\{[\s\S]*\}$/)
-      if (jsonMatch) {
-        try {
-          parsed = JSON.parse(jsonMatch[0])
-        } catch {
-          parsed = null
-        }
-      }
-    }
-  }
-
-  return { raw: rawText, json: parsed }
+// ----------------------------------------------------
+// Bullet normalization
+// ----------------------------------------------------
+function normalizeBullets(text: string): string {
+  return text
+    .replace(/^[\u2022\u25E6\u25AA\u2023\u2043●▪•]+/gm, "- ")
+    .replace(/^\s*[•●▪]/gm, "- ")
+    .replace(/^\s*[-–—]\s*/gm, "- ")
+    .replace(
+      /^\s*(Implemented|Led|Managed|Created|Developed|Built|Designed|Refactored|Enhanced|Optimized|Architected|Spearheaded|Coordinated|Maintained|Improved|Increased|Reduced|Collaborated|Solved|Trained|Mentored|Automated)\b/gm,
+      "- $1"
+    )
+    .replace(/^- -/gm, "- ")
+    .replace(/-\s+/g, "- ")
+    .trim();
 }
 
-// ================================================================
+// ----------------------------------------------------
 // Rate limiting
-// ================================================================
+// ----------------------------------------------------
 type RateEntry = {
-  count: number
-  lastTimestamp: number
-  dayStart: number
-}
+  count: number;
+  lastTimestamp: number;
+  dayStart: number;
+};
 
 type RateLimitResult =
   | { ok: true; entry: RateEntry }
-  | { ok: false; reason: 'cooldown'; remaining: number }
-  | { ok: false; reason: 'daily_limit' }
+  | { ok: false; reason: "cooldown"; remaining: number }
+  | { ok: false; reason: "daily_limit" };
 
-const rateStore = new Map<string, RateEntry>()
+const rateStore = new Map<string, RateEntry>();
 
-const MAX_PER_DAY = Number(process.env.RATE_LIMIT_MAX_PER_DAY || 5)
+const MAX_PER_DAY = Number(process.env.RATE_LIMIT_MAX_PER_DAY || 5);
 const COOLDOWN_SECONDS = Number(
   process.env.RATE_LIMIT_COOLDOWN_SECONDS || 30
-)
+);
 
-function getClientIp(req: Request): string {
-  const fwd = req.headers.get('x-forwarded-for')
-  if (!fwd) return 'unknown'
-  return fwd.split(',')[0].trim()
+function getClientIp(req: Request) {
+  const fwd = req.headers.get("x-forwarded-for");
+  return fwd ? fwd.split(",")[0].trim() : "unknown";
 }
 
 function checkRateLimit(ip: string): RateLimitResult {
-  const now = Date.now()
-  const entry: RateEntry =
-    rateStore.get(ip) ?? {
+  const now = Date.now();
+  const entry =
+    rateStore.get(ip) ||
+    ({
       count: 0,
       lastTimestamp: 0,
       dayStart: now,
-    }
+    } as RateEntry);
 
-  // Reset daily window if more than 24h has passed
+  // Reset daily window
   if (now - entry.dayStart > 24 * 60 * 60 * 1000) {
-    entry.count = 0
-    entry.dayStart = now
+    entry.count = 0;
+    entry.dayStart = now;
   }
 
-  const secondsSinceLast = (now - entry.lastTimestamp) / 1000
-
-  if (secondsSinceLast < COOLDOWN_SECONDS) {
+  // Cooldown
+  const sinceLast = (now - entry.lastTimestamp) / 1000;
+  if (sinceLast < COOLDOWN_SECONDS) {
     return {
       ok: false,
-      reason: 'cooldown',
-      remaining: Math.ceil(COOLDOWN_SECONDS - secondsSinceLast),
-    }
+      reason: "cooldown",
+      remaining: Math.ceil(COOLDOWN_SECONDS - sinceLast),
+    };
   }
 
+  // Daily limit
   if (entry.count >= MAX_PER_DAY) {
-    return { ok: false, reason: 'daily_limit' }
+    return { ok: false, reason: "daily_limit" };
   }
 
-  return { ok: true, entry }
+  return { ok: true, entry };
 }
 
-// ================================================================
-// Bullet normalizer (for AI prompt)
-// ================================================================
-function normalizeBullets(text: string): string {
-  return text
-    .replace(/^[\u2022\u25E6\u25AA\u2023\u2043●▪•]+/gm, '- ')
-    .replace(/^\s*[•●▪]/gm, '- ')
-    .replace(/^\s*[-–—]\s*/gm, '- ')
-    .replace(
-      /^\s*(Implemented|Led|Managed|Created|Developed|Built|Designed|Refactored|Enhanced|Optimized|Architected|Spearheaded|Coordinated|Maintained|Improved|Increased|Reduced|Collaborated|Solved|Trained|Mentored|Automated)\b/gm,
-      '- $1'
-    )
-    .replace(/^- -/gm, '- ')
-    .replace(/-\s+/g, '- ')
-    .trim()
+// ----------------------------------------------------
+// JSON extraction helper
+// ----------------------------------------------------
+function safeExtractJson(text: string): any | null {
+  try {
+    const match = text.match(/```json([\s\S]*?)```/i);
+    const raw = match ? match[1].trim() : text.trim();
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
-// ================================================================
-// POST handler
-// ================================================================
+// ----------------------------------------------------
+// POST Handler
+// ----------------------------------------------------
 export async function POST(req: Request) {
   try {
-    const ip = getClientIp(req)
+    const ip = getClientIp(req);
+    const body = await req.json().catch(() => null);
 
-    const body = await req.json().catch(() => null)
-    const resumeText: string | undefined = body?.resumeText
-
+    const resumeText = body?.resumeText as string | undefined;
     if (!resumeText || resumeText.trim().length < 30) {
       return NextResponse.json(
-        { error: 'Resume text is too short or missing' },
+        { error: "Resume text is too short or missing" },
         { status: 400 }
-      )
+      );
     }
 
-    // Rate limit check
-    const rl = checkRateLimit(ip)
+    // Rate limit enforcement
+    const rl = checkRateLimit(ip);
     if (!rl.ok) {
-      if (rl.reason === 'cooldown') {
+      if (rl.reason === "cooldown") {
         return NextResponse.json(
-          { error: 'cooldown', remaining: rl.remaining },
+          { error: "cooldown", remaining: rl.remaining },
           { status: 429 }
-        )
+        );
       }
       return NextResponse.json(
-        { error: 'daily_limit' },
+        { error: "daily_limit" },
         { status: 429 }
-      )
+      );
     }
 
-    const cleaned = normalizeBullets(resumeText)
+    const cleaned = normalizeBullets(resumeText);
 
-    const prompt = `
-You are an expert résumé editor. You are analyzing résumé text extracted from a PDF, which may contain OCR or text-extraction artifacts such as:
-- Incorrect spacing inside words (e.g., "profi cien t", "engi neer")
-- Broken ligatures
-- Random line breaks
-- Bullet symbols converted into "-"
-- Words split across lines
+    const systemPrompt = `
+You are a resume evaluation engine. Always return STRICT JSON ONLY — no prose.
+The JSON must follow EXACTLY this structure:
 
-STRICTLY IGNORE all spacing or OCR artifacts. Do NOT list them as issues. ONLY focus on the quality of the writing, clarity, strength of bullet points, action verbs, quantification, impact, and professional tone.
+{
+  "summaryCritique": "string",
+  "improvements": ["string"],
+  "rewrittenSummary": "string"
+}
 
-Analyze the following normalized résumé text (bullets begin with "- ") and produce a STRICT JSON object with:
+Your job:
+- Evaluate the resume
+- Suggest improvements
+- Rewrite the summary to be more effective
+`.trim();
 
-- "summaryCritique": A 2–3 paragraph critique focusing on clarity, relevance, impact, and effectiveness of the content (NOT formatting or extraction errors).
-- "improvements": 8–12 specific suggestions that improve bullet impact, action verbs, quantification, readability, and structure—but NEVER include spacing/OCR errors or cosmetic formatting.
-- "rewrittenSummary": A polished 2–3 sentence professional summary written in a confident, recruiter-friendly tone.
+    const userPrompt = `
+Analyze the following resume content and return JSON exactly matching the required schema.
 
-The output MUST be valid JSON only, with NO text outside the JSON.
-
-Résumé text:
+Resume:
 ${cleaned}
-`
+    `.trim();
 
-    const aiResult = await getClient().responses.create({
+    // ----------------------------------------------------
+    // Chat Completion Request
+    // ----------------------------------------------------
+    const completion = await getClient().chat.completions.create({
       model: MODEL,
-      input: prompt,
-    })
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    });
 
-    const { raw, json } = extractTextAndJSON(aiResult)
+    // ==========================================
+    // ALWAYS LOG RAW RESPONSE
+    // ==========================================
+    console.log("=== RAW COMPLETION RESPONSE START ===");
+    console.dir(completion, { depth: null });
+    console.log("=== RAW COMPLETION RESPONSE END ===");
+
+    const text = completion.choices?.[0]?.message?.content || "";
+
+    // Log raw model text
+    console.log("=== RAW MODEL TEXT START ===");
+    console.log(text);
+    console.log("=== RAW MODEL TEXT END ===");
+
+    // JSON parsing attempt
+    const json = safeExtractJson(text);
+
+    if (json) {
+      console.log("=== PARSED JSON START ===");
+      console.dir(json, { depth: null });
+      console.log("=== PARSED JSON END ===");
+    } else {
+      console.error("=== JSON PARSE FAILED — RAW TEXT BELOW ===");
+      console.error(text);
+    }
 
     if (!json) {
-      console.error('AI JSON parse failure:', raw)
       return NextResponse.json(
-        { error: 'invalid_ai_json', raw },
+        { error: "invalid_ai_json" },
         { status: 500 }
-      )
+      );
     }
 
-    // Update rate entry now that the call succeeded
-    const entry = rl.entry
-    entry.count += 1
-    entry.lastTimestamp = Date.now()
-    rateStore.set(ip, entry)
+    // Update rate entry
+    const entry = rl.entry;
+    entry.count++;
+    entry.lastTimestamp = Date.now();
+    rateStore.set(ip, entry);
 
     return NextResponse.json(
       {
@@ -248,12 +224,12 @@ ${cleaned}
         rewrittenSummary: json.rewrittenSummary,
       },
       { status: 200 }
-    )
+    );
   } catch (err) {
-    console.error('AI REVIEW ERROR:', err)
+    console.error("AI REVIEW ERROR:", err);
     return NextResponse.json(
-      { error: 'server_failure' },
+      { error: "server_failure" },
       { status: 500 }
-    )
+    );
   }
 }
