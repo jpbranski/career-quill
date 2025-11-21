@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import Script from 'next/script';
+import Script from 'next/script'; // <--- NEW: Optimized script loader
 import {
   Box,
   Container,
@@ -15,7 +15,7 @@ import {
   Tab,
   Divider,
 } from '@mui/material';
-import Grid2 from '@mui/material/Grid';
+import Grid from '@mui/material/Grid2';
 import {
   Analytics as AnalyticsIcon,
   AutoAwesome as AIIcon,
@@ -34,7 +34,7 @@ import {
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 
-// Configure PDF.js worker
+// Configure PDF.js worker with local file
 if (typeof window !== 'undefined') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
 }
@@ -57,6 +57,7 @@ declare global {
 async function verifyRecaptcha(action: string): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!window.grecaptcha?.enterprise) {
+      console.error('reCAPTCHA Enterprise not available on window');
       reject(new Error('reCAPTCHA not loaded'));
       return;
     }
@@ -69,6 +70,7 @@ async function verifyRecaptcha(action: string): Promise<string> {
         );
         resolve(token);
       } catch (error) {
+        console.error('reCAPTCHA execution failed:', error);
         reject(error);
       }
     });
@@ -80,6 +82,7 @@ async function verifyRecaptcha(action: string): Promise<string> {
    ============================================================ */
 async function verifyAction(action: string): Promise<boolean> {
   try {
+    console.log(`Verifying reCAPTCHA action: ${action}`);
     const token = await verifyRecaptcha(action);
 
     const res = await fetch('/api/verify-recaptcha', {
@@ -88,11 +91,16 @@ async function verifyAction(action: string): Promise<boolean> {
       body: JSON.stringify({ token, action }),
     });
 
-    if (!res.ok) return false;
+    if (!res.ok) {
+      console.error('reCAPTCHA verification failed with status:', res.status);
+      return false;
+    }
 
     const data = await res.json();
+    console.log('reCAPTCHA verification response:', data);
     return data.success === true;
-  } catch {
+  } catch (error) {
+    console.error('Error verifying reCAPTCHA:', error);
     return false;
   }
 }
@@ -151,20 +159,30 @@ export default function AnalyzerPage() {
     setFileName(file.name);
 
     try {
+      // 1. Verify User is Human
       const isHuman = await verifyAction('resume_upload');
-      if (!isHuman) throw new Error('Security check failed.');
+      if (!isHuman) {
+        throw new Error('Security check failed. Please refresh and try again.');
+      }
 
+      // 2. Process File
       let text = '';
-      if (file.type === 'application/pdf') text = await extractTextFromPDF(file);
-      else if (file.name.endsWith('.docx')) text = await extractTextFromDocx(file);
-      else throw new Error('Unsupported file type');
+      if (file.type === 'application/pdf') {
+        text = await extractTextFromPDF(file);
+      } else if (file.name.endsWith('.docx')) {
+        text = await extractTextFromDocx(file);
+      } else {
+        throw new Error('Unsupported file format');
+      }
 
       setResumeText(text);
 
-      const result = await analyzeResume(text);
+      // 3. Run Static Analysis
+      const result = analyzeResume(text);
       setAnalysis(result);
       setAIFeedback(null);
     } catch (err: any) {
+      console.error('Error in handleFileSelect:', err);
       setError(err.message || 'Failed to analyze resume.');
     } finally {
       setLoading(false);
@@ -187,12 +205,14 @@ export default function AnalyzerPage() {
 
     try {
       const isHuman = await verifyAction('resume_analyze');
-      if (!isHuman) throw new Error('Security check failed.');
+      if (!isHuman) {
+        throw new Error('Security check failed. Please refresh and try again.');
+      }
 
-      const result = await analyzeResume(resumeText);
+      const result = analyzeResume(resumeText);
       setAnalysis(result);
     } catch (err: any) {
-      setError(err.message || 'Failed to analyze.');
+      setError(err.message || 'Failed to analyze resume.');
     } finally {
       setLoading(false);
     }
@@ -202,9 +222,9 @@ export default function AnalyzerPage() {
       AI Review Handler
      ============================================================ */
   const handleAIReview = async () => {
-    const rate = canMakeRequest();
-    if (!rate.allowed) {
-      setError(rate.reason || 'Rate limit exceeded');
+    const rateLimit = canMakeRequest();
+    if (!rateLimit.allowed) {
+      setError(rateLimit.reason || 'Rate limit exceeded.');
       return;
     }
 
@@ -217,9 +237,13 @@ export default function AnalyzerPage() {
     setError(null);
 
     try {
+      // 1. Verify User is Human
       const isHuman = await verifyAction('ai_review');
-      if (!isHuman) throw new Error('Security check failed.');
+      if (!isHuman) {
+        throw new Error('Security check failed.');
+      }
 
+      // 2. Call AI API
       const response = await fetch('/api/analyze-resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -230,6 +254,7 @@ export default function AnalyzerPage() {
 
       const data = await response.json();
 
+      // Normalize backend → frontend shape
       setAIFeedback({
         summary: data.summaryCritique,
         bulletSuggestions: data.bulletSuggestions,
@@ -252,10 +277,11 @@ export default function AnalyzerPage() {
      ============================================================ */
   return (
     <Box sx={{ minHeight: '100vh', py: 4 }}>
-      {/* reCAPTCHA Script */}
+      {/* Load reCAPTCHA Enterprise Script */}
       <Script
         src={`https://www.google.com/recaptcha/enterprise.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
         strategy="afterInteractive"
+        onLoad={() => console.log('reCAPTCHA loaded')}
       />
 
       <Container maxWidth="xl">
@@ -274,10 +300,9 @@ export default function AnalyzerPage() {
           </Alert>
         )}
 
-        {/* ===================== GRID2 LAYOUT ===================== */}
-        <Grid2 container spacing={3}>
+        <Grid container spacing={3}>
           {/* LEFT COLUMN */}
-          <Grid2 xs={12} lg={5}>
+          <Grid xs={12} lg={5}>
             <Paper sx={{ p: 3, mb: 3 }}>
               <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
                 <Tab label="Upload File" />
@@ -295,10 +320,10 @@ export default function AnalyzerPage() {
                     value={resumeText}
                     onChange={(e) => setResumeText(e.target.value)}
                     label="Paste resume text"
+                    placeholder="Copy and paste your resume content here..."
                     variant="outlined"
                     sx={{ mb: 2 }}
                   />
-
                   <Button
                     variant="contained"
                     color="primary"
@@ -313,16 +338,16 @@ export default function AnalyzerPage() {
               )}
             </Paper>
 
-            {/* AI REVIEW */}
+            {/* AI REVIEW CARD */}
             {analysis && (
               <Paper sx={{ p: 3 }}>
-                <Box display="flex" justifyContent="space-between" mb={2}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                   <Typography variant="h6" fontWeight={600}>
                     AI-Powered Review
                   </Typography>
                   <Box textAlign="right">
-                    <Typography variant="caption" color="text.secondary">
-                      Requests remaining: {remainingRequests}
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      Requests remaining today: {remainingRequests}
                     </Typography>
                     {timeUntilNext > 0 && (
                       <Typography variant="caption" color="text.secondary">
@@ -357,10 +382,10 @@ export default function AnalyzerPage() {
                 )}
               </Paper>
             )}
-          </Grid2>
+          </Grid>
 
           {/* RIGHT COLUMN */}
-          <Grid2 xs={12} lg={7}>
+          <Grid xs={12} lg={7}>
             {loading && (
               <Box display="flex" justifyContent="center" alignItems="center" height="100%">
                 <CircularProgress />
@@ -368,17 +393,17 @@ export default function AnalyzerPage() {
             )}
 
             {!loading && analysis && (
-              <Grid2 container spacing={3}>
-                <Grid2 xs={12} lg={7}>
+              <Grid container spacing={3}>
+                <Grid xs={12} lg={7}>
                   <AnalysisResults analysis={analysis} />
-                </Grid2>
-                <Grid2 xs={12} lg={5}>
+                </Grid>
+                <Grid xs={12} lg={5}>
                   <SuggestionsSidebar suggestions={analysis.suggestions} />
-                </Grid2>
-              </Grid2>
+                </Grid>
+              </Grid>
             )}
-          </Grid2>
-        </Grid2>
+          </Grid>
+        </Grid>
       </Container>
     </Box>
   );
