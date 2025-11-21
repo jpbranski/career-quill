@@ -170,7 +170,6 @@ ${cleaned}
     // ----------------------------------------------------
     const completion = await getClient().chat.completions.create({
       model: MODEL,
-      temperature: 0.1,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
