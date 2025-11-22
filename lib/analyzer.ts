@@ -21,14 +21,18 @@ function fixOcrSpacing(text: string) {
   // Merge broken words: "Pro fi cient" → "Proficient"
   cleaned = cleaned.replace(/([A-Za-z])\s+([A-Za-z])/g, '$1$2')
 
-  // Merge across line breaks: "Imple\nmented" → "Implemented"
+  // Merge wrapped words broken by PDF line breaks: "Imple\nmented" → "Implemented"
   cleaned = cleaned.replace(/([a-z])\n([a-z])/gi, '$1 $2')
 
-  // Normalize bullet leading spaces: "-   Implemented" → "- Implemented"
+  // Normalize bullet leading spacing: "-   Implemented" → "- Implemented"
   cleaned = cleaned.replace(/([-•●▪◦‣⁃*]+)\s+([A-Za-z])/g, '$1 $2')
+
+  // NEW: Force bullets onto their own lines
+  cleaned = cleaned.replace(/([•●▪◦‣⁃*-])\s*/g, '\n$1 ');
 
   return cleaned
 }
+
 
 // ==================================================
 // 2. REGEX + HELPERS
