@@ -160,6 +160,7 @@ Your job:
 
     const userPrompt = `
 Analyze the following resume content and return JSON exactly matching the required schema.
+Ignore spacing errors, broken words, ligatures, line breaks, or garbage characters created during PDF or DOCX text extraction (e.g., 'Pro fi cient', 'mana ge ment', 'de sign'). Do not treat these as typos or issues in the resume. Only critique true grammar, clarity, structure, content quality, and writing effectiveness.
 
 Resume:
 ${cleaned}
