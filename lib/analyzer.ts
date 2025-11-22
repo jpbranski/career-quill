@@ -336,6 +336,7 @@ function buildSuggestions(
 export async function analyzeResume(text: string): Promise<AnalysisResult> {
   // Fix PDF OCR weirdness
   const cleaned = fixOcrSpacing(text)
+  console.log("📄 Cleaned Text Preview:", cleaned.slice(0, 500))
 
   const lines = cleaned
     .split('\n')
@@ -350,8 +351,12 @@ export async function analyzeResume(text: string): Promise<AnalysisResult> {
   const bullets = extractBullets(lines)
   const bulletCount = bullets.length
 
+  console.log("🔍 Extracted Bullets:", bullets)
+  console.log("🔢 Bullet Count:", bulletCount)
+
   // Action verbs
   const actionVerbCount = countActionVerbs(bullets)
+  console.log("💬 Action Verbs Found:", actionVerbCount)
 
   // Quantifiers
   const quantifiedBullets = countQuantifiedBullets(bullets)
