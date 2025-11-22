@@ -11,22 +11,38 @@ const ACTION_VERBS: string[] = (actionVerbsRaw as string[])
   .filter(v => v.length > 0)
 
 // ==================================================
+// OCR / PDF CLEANUP
+// ==================================================
+
+// Repair broken PDF words and line breaks
+function fixOcrSpacing(text: string) {
+  let cleaned = text
+
+  // Merge broken words: "Pro fi cient" → "Proficient"
+  cleaned = cleaned.replace(/([A-Za-z])\s+([A-Za-z])/g, '$1$2')
+
+  // Merge across line breaks: "Imple\nmented" → "Implemented"
+  cleaned = cleaned.replace(/([a-z])\n([a-z])/gi, '$1 $2')
+
+  // Normalize bullet leading spaces: "-   Implemented" → "- Implemented"
+  cleaned = cleaned.replace(/([-•●▪◦‣⁃*]+)\s+([A-Za-z])/g, '$1 $2')
+
+  return cleaned
+}
+
+// ==================================================
 // 2. REGEX + HELPERS
 // ==================================================
 
-// Universal bullet detection (handles hyphens + unicode bullets)
-const BULLET_REGEX = /^\s*(?:[-‐-–—•●▪▫◦‣⁃*]+\s+)(.+)$/
+// Stronger bullet detection
+const BULLET_REGEX =
+  /^\s*(?:[-‐–—•●▪▫◦‣⁃*]+|\d+\.|\d+\))\s*(.+)$/i
 
-// Treat “Implemented…, Led…, Managed…” lines as bullets
+// Treat leading verbs as bullets
 const LEADING_VERB_BULLET_REGEX =
   /^\s*(Implemented|Led|Managed|Created|Developed|Built|Designed|Refactored|Enhanced|Optimized|Architected|Spearheaded|Coordinated|Maintained|Improved|Increased|Reduced|Collaborated|Solved|Trained|Mentored|Automated)\b/i
 
-// PDF spacing cleanup (fixes "pro fi cien t" → "proficient")
-function fixOcrSpacing(text: string) {
-  return text.replace(/([a-z])\s+([a-z])/gi, '$1$2')
-}
-
-// Quantifier detection ($5k, 42%, 12+, 300M, etc.)
+// Quantifiers like 35%, $2M, 140+, 12k
 const QUANTIFIER_REGEX = /\b(\$?\d+[%kKmM]?|\d+%|\d+\+)\b/
 
 // ==================================================
@@ -39,21 +55,20 @@ function extractBullets(lines: string[]): string[] {
 
   for (const rawLine of lines) {
     const line = rawLine.trim()
+
     const bulletMatch = line.match(BULLET_REGEX)
     const verbAsBullet = !bulletMatch && LEADING_VERB_BULLET_REGEX.test(line)
 
     if (bulletMatch || verbAsBullet) {
-      // Flush previous bullet
       if (buffer) bullets.push(buffer.trim())
       buffer = bulletMatch ? bulletMatch[1].trim() : line
       continue
     }
 
+    // PDF-wrapped continuation lines
     if (buffer && /^[A-Za-z0-9]/.test(line)) {
-      // Continuation line (PDF-wrapped bullet)
       buffer += ' ' + line
     } else {
-      // Neither bullet nor continuation
       if (buffer) {
         bullets.push(buffer.trim())
         buffer = ''
@@ -69,18 +84,26 @@ function extractBullets(lines: string[]): string[] {
 // 4. ACTION VERB + QUANTIFIER COUNTING
 // ==================================================
 
+function normalizeForVerbCheck(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ') // strip garbage
+    .replace(/\s+/g, ' ')      // normalize spaces
+    .trim()
+}
+
 function countActionVerbs(bullets: string[]): number {
   let count = 0
+
   for (const b of bullets) {
-    const words = b
-      .toLowerCase()
-      .split(/[^a-z]+/i)
-      .filter(Boolean)
+    const normalized = normalizeForVerbCheck(b)
+    const words = normalized.split(' ').filter(Boolean)
 
     if (words.some(w => ACTION_VERBS.includes(w))) {
       count++
     }
   }
+
   return count
 }
 
@@ -107,7 +130,7 @@ function detectSections(text: string) {
 }
 
 // ==================================================
-// 6. SCORING SYSTEM
+// 6. SCORING SYSTEM (unchanged)
 // ==================================================
 
 function calculateScore(metrics: any, wordCount: number): number {
@@ -145,7 +168,7 @@ function calculateScore(metrics: any, wordCount: number): number {
 }
 
 // ==================================================
-// 7. TYPES
+// TYPES
 // ==================================================
 
 export interface Suggestion {
@@ -178,7 +201,7 @@ export interface AnalysisResult {
 }
 
 // ==================================================
-// 8. SUGGESTION GENERATOR
+// 8. SUGGESTION GENERATOR (unchanged)
 // ==================================================
 
 function buildSuggestions(
@@ -242,7 +265,7 @@ function buildSuggestions(
         type: 'warning',
         title: 'Strengthen bullets with action verbs',
         description:
-          'Start each bullet with a strong action verb such as “Led”, “Implemented”, “Optimized”, or “Designed” to emphasize your ownership.',
+          'Start each bullet with a strong action verb such as “Led”, “Implemented”, “Optimized”, or “Designed” to emphasize ownership.',
         category: 'keywords',
       })
     }
@@ -253,7 +276,7 @@ function buildSuggestions(
         type: 'warning',
         title: 'Quantify more of your achievements',
         description:
-          'Whenever possible, include numbers (%, $, counts, time saved) to show scale and impact, e.g., “Reduced processing time by 35%”.',
+          'Include numbers (%, $, counts, time saved) to show scale and impact, e.g., “Reduced processing time by 35%”.',
         category: 'content',
       })
     }
@@ -276,7 +299,7 @@ function buildSuggestions(
       type: 'info',
       title: 'Use a consistent date format',
       description:
-        'Pick one date format (e.g., “Jan 2022 – Present”) and use it consistently across all roles and sections.',
+        'Pick one date format (e.g., “Jan 2022 – Present”) and use it consistently.',
       category: 'formatting',
     })
   }
@@ -287,20 +310,18 @@ function buildSuggestions(
       type: 'info',
       title: 'Adjust overall resume length',
       description:
-        'Aim for roughly 300–600 words on a one-page resume so that it feels substantial but still easy to scan quickly.',
+        'Aim for roughly 300–600 words for a one-page resume.',
       category: 'structure',
     })
   }
 
-  // If score is very low and we somehow still have few suggestions,
-  // add a generic “overall improvements” item.
   if (score < 60 && suggestions.length < 3) {
     suggestions.push({
       id: 'overall-strength',
       type: 'warning',
       title: 'Overall resume strength can be improved',
       description:
-        'Focus on adding more impact-focused bullets, quantifying results, and tightening wording to raise your overall score.',
+        'Focus on adding impact-focused bullets, quantifying results, and tightening wording.',
       category: 'content',
     })
   }
@@ -361,7 +382,6 @@ export async function analyzeResume(text: string): Promise<AnalysisResult> {
   const dateConsistency =
     dateCounts.filter(c => c > 0).length <= 1
 
-  // Build metrics object
   const metrics = {
     ...sections,
     bulletCount,
@@ -373,10 +393,10 @@ export async function analyzeResume(text: string): Promise<AnalysisResult> {
     dateConsistency,
   }
 
-  // Generate score
+  // Score
   const score = calculateScore(metrics, wordCount)
 
-  // Generate suggestions based on metrics + score
+  // Suggestions
   const suggestions = buildSuggestions(metrics, wordCount, score)
 
   return {
