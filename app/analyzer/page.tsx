@@ -223,7 +223,12 @@ export default function AnalyzerPage() {
       if (!response.ok) throw new Error('AI analysis failed.');
 
       const data = await response.json();
-      setAIFeedback(data);
+      setAIFeedback({
+        summary: data.summaryCritique,
+        bulletSuggestions: data.bulletSuggestions,
+        improvedSummary: data.rewrittenSummary,
+      });
+
       recordRequest();
     } catch (err: any) {
       setError(err.message || 'AI Review failed.');
@@ -240,7 +245,7 @@ export default function AnalyzerPage() {
      ============================================================ */
   return (
     <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', py: 4 }}>
-      
+
       {/* Load reCAPTCHA Enterprise Script */}
       <Script
         src={`https://www.google.com/recaptcha/enterprise.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`}
@@ -346,7 +351,7 @@ export default function AnalyzerPage() {
 
           {/* RIGHT COLUMN */}
           <Grid item xs={12} lg={7}>
-             {!analysis && !loading && (
+            {!analysis && !loading && (
               <Paper sx={{ p: 8, textAlign: 'center' }}>
                 <AnalyticsIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
                 <Typography variant="h6" color="text.secondary">
