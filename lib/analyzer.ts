@@ -13,25 +13,43 @@ const ACTION_VERBS: string[] = (actionVerbsRaw as string[])
 // ==================================================
 // OCR / PDF CLEANUP
 // ==================================================
-
-// Repair broken PDF words and line breaks
 function fixOcrSpacing(text: string) {
-  let cleaned = text
+  let cleaned = text;
 
-  // Merge broken words: "Pro fi cient" → "Proficient"
-  cleaned = cleaned.replace(/([A-Za-z])\s+([A-Za-z])/g, '$1$2')
+  // 1. Merge broken intra-word spaces:
+  //    "Pro fi cient" → "Proficient"
+  cleaned = cleaned.replace(/([A-Za-z])\s+([A-Za-z])/g, '$1$2');
 
-  // Merge wrapped words broken by PDF line breaks: "Imple\nmented" → "Implemented"
-  cleaned = cleaned.replace(/([a-z])\n([a-z])/gi, '$1 $2')
+  // 2. Merge line-wrapped broken words:
+  //    "Imple\nmented" → "Implemented"
+  cleaned = cleaned.replace(/([a-z])\n([a-z])/gi, '$1 $2');
 
-  // Normalize bullet leading spacing: "-   Implemented" → "- Implemented"
-  cleaned = cleaned.replace(/([-•●▪◦‣⁃*]+)\s+([A-Za-z])/g, '$1 $2')
+  // 3. Fix smashed word boundaries caused by PDF extraction:
+  //    "Implementedacomponent" → "Implemented a component"
+  cleaned = cleaned.replace(/([a-z])([A-Z])/g, '$1 $2');
 
-  // NEW: Force bullets onto their own lines
-  cleaned = cleaned.replace(/([•●▪◦‣⁃*-])\s*/g, '\n$1 ');
+  // 4. Fix common "verb+the" smash-ups seen in PDFs:
+  //    "Ledthedevelopment" → "Led the development"
+  cleaned = cleaned.replace(
+    /(Implemented|Led|Refactored|Optimized|Designed|Built|Created|Managed|Developed)(the)/gi,
+    '$1 the '
+  );
 
-  return cleaned
+  // 5. Normalize spacing after bullet markers:
+  //    "-   Implemented" → "- Implemented"
+  cleaned = cleaned.replace(/([-•●▪◦‣⁃*])\s+([A-Za-z])/g, '$1 $2');
+
+  // 6. Force REAL bullets onto their own lines:
+  //    "…. Wisconsin ● Implemented…" → "\n● Implemented…"
+  //    BUT do NOT break hyphens inside sentences
+  cleaned = cleaned.replace(
+    /(?:^|\s)([•●▪◦‣⁃*])\s+/g,
+    '\n$1 '
+  );
+
+  return cleaned;
 }
+
 
 
 // ==================================================
