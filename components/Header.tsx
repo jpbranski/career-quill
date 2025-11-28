@@ -26,6 +26,7 @@ import { useThemeMode } from '@/providers/ThemeContext';
 const navLinks = [
   { label: 'Resume Builder', href: '/builder' },
   { label: 'Resume Analyzer', href: '/analyzer' },
+  { label: 'Resources', href: '/resources' },
   { label: 'About', href: '/about' },
   { label: 'Contact', href: '/contact' },
 ];
