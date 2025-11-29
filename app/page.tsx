@@ -11,7 +11,7 @@ import {
   Speed as SpeedIcon,
   TrendingUp as TrendingUpIcon,
 } from '@mui/icons-material';
-import QuillIcon from '@/components/QuillIcon';
+import Logo from '@/components/Logo';
 
 export default function HomePage() {
   return (
@@ -26,7 +26,7 @@ export default function HomePage() {
         <Container maxWidth="lg">
           <Stack spacing={4} alignItems="center" textAlign="center">
             <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-              <QuillIcon size={80} />
+              <Logo size={120} />
             </Box>
 
             <Typography

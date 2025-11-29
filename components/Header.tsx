@@ -26,6 +26,7 @@ import { useThemeMode } from '@/providers/ThemeContext';
 const navLinks = [
   { label: 'Resume Builder', href: '/builder' },
   { label: 'Resume Analyzer', href: '/analyzer' },
+  { label: 'Resources', href: '/resources' },
   { label: 'About', href: '/about' },
   { label: 'Contact', href: '/contact' },
 ];
@@ -50,6 +51,7 @@ export default function Header() {
           borderBottom: '1px solid',
           borderColor: 'divider',
           backdropFilter: 'blur(10px)',
+          borderRadius: 0, // Ensure no border radius - fully rectangular
         }}
       >
         <Container maxWidth="xl">
