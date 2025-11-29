@@ -20,8 +20,7 @@ export default function DocsLayout({ children, currentCategory, currentSlug }: D
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'stretch',
-        pt: '64px', // Account for fixed header
-        minHeight: 'calc(100vh - 64px)'
+        minHeight: '100vh'
       }}
     >
       {/* Sidebar - Hide on mobile for now (can add drawer later) */}
@@ -35,7 +34,8 @@ export default function DocsLayout({ children, currentCategory, currentSlug }: D
         sx={{
           flexGrow: 1,
           bgcolor: 'background.default',
-          minHeight: 'calc(100vh - 64px)',
+          minHeight: '100vh',
+          pt: '64px',
           overflowY: 'auto',
           overflowX: 'hidden'
         }}
