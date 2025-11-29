@@ -51,6 +51,7 @@ export default function Header() {
           borderBottom: '1px solid',
           borderColor: 'divider',
           backdropFilter: 'blur(10px)',
+          borderRadius: 0, // Ensure no border radius - fully rectangular
         }}
       >
         <Container maxWidth="xl">

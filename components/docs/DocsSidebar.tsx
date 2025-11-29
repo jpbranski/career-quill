@@ -101,9 +101,9 @@ export default function DocsSidebar({ currentCategory, currentSlug }: DocsSideba
     <Box
       sx={{
         width: '280px',
-        height: '100vh',
+        height: 'calc(100vh - 64px)', // Full height minus navbar
         position: 'sticky',
-        top: 0,
+        top: '64px', // Start below navbar
         overflowY: 'auto',
         borderRight: '1px solid',
         borderColor: 'divider',
